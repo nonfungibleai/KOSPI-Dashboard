@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주식 대시보드 (라이브)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700;800&display=swap');
+
+  :root {
+    --accent:#7c3aed; --accent2:#a855f7;
+    --green:#10b981; --green-lt:#d1fae5;
+    --red:#f43f5e;   --red-lt:#ffe4e6;
+    --yellow:#f59e0b; --blue:#3b82f6;
+    --text:#1e1b4b;  --text-2:#475569; --text-3:#94a3b8;
+    --bg-card:rgba(255,255,255,0.92);
+    --border:rgba(255,255,255,0.9);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:linear-gradient(135deg,#667eea 0%,#764ba2 30%,#f093fb 65%,#f5576c 100%);
+    min-height:100vh; font-family:'Inter','Noto Sans KR',sans-serif; overflow:hidden;
+  }
+  .app { display:grid; grid-template-rows:58px 1fr 72px; height:100vh; }
+
+  /* ── NAV ── */
+  .topnav {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 22px;
+    background:rgba(255,255,255,0.13); backdrop-filter:blur(24px);
+    border-bottom:1px solid rgba(255,255,255,0.22); z-index:20;
+  }
+  .nav-brand { font-size:16px; font-weight:800; color:#fff; }
+  .nav-brand span { opacity:.55; font-weight:400; }
+  .nav-pills { display:flex; gap:4px; background:rgba(255,255,255,0.12); padding:4px; border-radius:14px; }
+  .nav-pill { padding:6px 18px; font-size:12px; font-weight:600; color:rgba(255,255,255,.7); border-radius:10px; cursor:pointer; transition:all .2s; }
+  .nav-pill.active { background:#fff; color:var(--accent); }
+
+  /* 연결 상태 */
+  .conn-status {
+    display:flex; align-items:center; gap:10px;
+    background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,.2);
+    border-radius:12px; padding:6px 12px;
+  }
+  .conn-dot { width:8px; height:8px; border-radius:50%; }
+  .conn-dot.live   { background:var(--green); box-shadow:0 0 6px var(--green); animation:pulse 1.5s infinite; }
+  .conn-dot.error  { background:var(--red); }
+  .conn-dot.loading{ background:var(--yellow); animation:pulse 0.8s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .conn-label { font-size:11px; font-weight:600; color:#fff; }
+  .conn-time  { font-size:10px; color:rgba(255,255,255,.6); }
+
+  .refresh-btn {
+    display:flex; align-items:center; gap:5px;
+    padding:5px 12px; background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.3); border-radius:8px;
+    color:#fff; font-size:11px; font-weight:600; cursor:pointer; transition:all .2s;
+  }
+  .refresh-btn:hover { background:rgba(255,255,255,.28); }
+  .refresh-icon { display:inline-block; transition:transform .5s; }
+  .spinning .refresh-icon { animation:spin .6s linear infinite; }
+  @keyframes spin { to{ transform:rotate(360deg); } }
+  .nav-icon { width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.15); display:flex; align-items:center; justify-content:center; font-size:15px; cursor:pointer; }
+  .avatar   { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,#ffecd2,#fcb69f); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; color:#c2410c; }
+
+  /* ── 콘텐츠 그리드 ── */
+  .content { display:grid; grid-template-columns:300px 1fr 270px; gap:12px; padding:12px 16px; overflow:hidden; }
+  .glass       { background:rgba(255,255,255,.17); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,.28); border-radius:20px; overflow:hidden; }
+  .glass-white { background:var(--bg-card); backdrop-filter:blur(20px); border:1px solid var(--border); border-radius:20px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,.08); }
+
+  /* ── LEFT ── */
+  .left-col { display:flex; flex-direction:column; gap:10px; overflow:hidden; min-height:0; }
+  .port-card { padding:15px 18px; display:flex; flex-direction:column; flex-shrink:0; }
+  .wl-item   { flex-shrink:0; }
+  .port-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .port-title  { font-size:13px; font-weight:700; color:var(--text); }
+  .port-period { font-size:10px; font-weight:600; color:var(--text-3); background:#f1f5f9; padding:3px 9px; border-radius:20px; cursor:pointer; transition:background .2s; }
+  .port-period:hover { background:#e2e8f0; }
+  .status-row  { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .status-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:20px; font-size:11px; font-weight:700; }
+  .badge-ahead  { background:var(--green-lt); color:#059669; border:1px solid rgba(16,185,129,.3); }
+  .badge-behind { background:var(--red-lt);   color:#be123c; border:1px solid rgba(244,63,94,.3); }
+  .badge-dot    { width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .status-gap   { font-size:11px; color:var(--text-2); }
+  .port-nums    { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:10px; }
+  .pn-item  { padding:8px 10px; border-radius:12px; }
+  .pn-item.actual { background:linear-gradient(135deg,rgba(124,58,237,.07),rgba(168,85,247,.04)); border:1px solid rgba(124,58,237,.12); }
+  .pn-item.target { background:linear-gradient(135deg,rgba(59,130,246,.07),rgba(99,102,241,.04)); border:1px solid rgba(59,130,246,.12); }
+  .pn-label { font-size:9px; font-weight:600; letter-spacing:.5px; color:var(--text-3); }
+  .pn-val   { font-size:19px; font-weight:800; margin-top:2px; letter-spacing:-.5px; }
+  .pn-sub   { font-size:9px; margin-top:1px; color:var(--text-3); }
+  .actual .pn-val { color:var(--accent); }
+  .target .pn-val { color:var(--blue); }
+  .chart-legend { display:flex; gap:12px; margin-bottom:6px; }
+  .leg-item { display:flex; align-items:center; gap:4px; font-size:10px; font-weight:600; color:var(--text-2); }
+  .leg-line { width:18px; height:3px; border-radius:2px; }
+  .leg-dash { width:18px; height:0; border-bottom:2.5px dashed; }
+  .port-chart-wrap { height:145px; }
+
+  /* 관심종목 */
+  .wl-hdr  { display:flex; justify-content:space-between; align-items:center; padding:11px 16px 9px; border-bottom:1px solid rgba(255,255,255,.2); }
+  .wl-title-txt { font-size:13px; font-weight:700; color:#fff; }
+  .wl-card   { display:flex; flex-direction:column; min-height:0; }
+  .wl-scroll { overflow-y:auto; flex:1; min-height:0; }
+  .wl-item { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; border-bottom:1px solid rgba(255,255,255,.07); cursor:pointer; transition:background .15s; }
+  .wl-item:hover { background:rgba(255,255,255,.08); }
+  .wl-item.sel   { background:rgba(255,255,255,.14); }
+  .wi-tkr  { font-size:12px; font-weight:700; color:#fff; }
+  .wi-code { font-size:9px; color:rgba(255,255,255,.5); margin-top:1px; }
+  .wi-price { font-size:12px; font-weight:700; color:#fff; }
+  .wi-pct  { font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; margin-top:3px; display:inline-block; }
+  .up-pill { background:rgba(52,211,153,.22); color:#10b981; }
+  .dn-pill { background:rgba(251,113,133,.22); color:#f43f5e; }
+  ::-webkit-scrollbar { width:3px; }
+  ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:2px; }
+
+  /* ── CENTER ── */
+  .center-col { display:flex; flex-direction:column; gap:10px; overflow:hidden; }
+  .hero { padding:13px 20px 11px; }
+  .hero-top { display:flex; justify-content:space-between; align-items:flex-start; }
+  .h-badge { display:inline-block; font-size:10px; font-weight:700; color:var(--accent); background:rgba(124,58,237,.09); padding:3px 10px; border-radius:20px; margin-bottom:5px; }
+  .h-name  { font-size:20px; font-weight:800; color:var(--text); letter-spacing:-.5px; }
+  .h-sub   { font-size:11px; color:var(--text-3); margin-top:2px; }
+  .h-price { font-size:28px; font-weight:800; color:var(--text); letter-spacing:-1px; text-align:right; }
+  .h-chg   { display:flex; gap:6px; justify-content:flex-end; margin-top:4px; }
+  .chg-abs { font-size:13px; color:var(--text-3); }
+  .chip    { padding:4px 12px; border-radius:20px; font-size:12px; font-weight:700; }
+  .chip-up { background:#dcfce7; color:#16a34a; }
+  .chip-dn { background:#fee2e2; color:#dc2626; }
+  .tf-bar  { display:flex; gap:4px; margin-top:12px; background:#f1f5f9; padding:4px; border-radius:12px; width:fit-content; }
+  .tf { padding:5px 13px; font-size:11px; font-weight:600; color:var(--text-3); border-radius:9px; cursor:pointer; border:none; background:transparent; transition:all .2s; }
+  .tf.on { background:#fff; color:var(--accent); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+  .price-card { padding:13px 18px; }
+  .pc-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .pc-title { font-size:13px; font-weight:700; color:var(--text); }
+  .pc-legends { display:flex; gap:10px; flex-wrap:wrap; }
+  .pcl { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text-3); font-weight:500; }
+  .pcl-line { width:16px; height:2.5px; border-radius:2px; }
+  .pcl-dash { width:16px; height:0; border-bottom:2px dashed; opacity:.7; }
+  .price-h { height:185px; }
+  .ind-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .ind-card  { background:var(--bg-card); border:1px solid rgba(255,255,255,.8); border-radius:14px; padding:10px 12px; box-shadow:0 4px 16px rgba(0,0,0,.05); }
+  .ic-label { font-size:9px; font-weight:600; letter-spacing:.5px; color:var(--text-3); }
+  .ic-val   { font-size:17px; font-weight:800; margin-top:4px; letter-spacing:-.5px; }
+  .ic-sub   { font-size:9px; color:var(--text-3); margin-top:1px; }
+  .ic-bar   { margin-top:8px; height:4px; background:#f1f5f9; border-radius:2px; overflow:hidden; }
+  .ic-fill  { height:100%; border-radius:2px; }
+  .vol-card { padding:10px 18px; }
+  .vol-h    { height:60px; }
+
+  /* ── RIGHT ── */
+  .right-col { display:flex; flex-direction:column; gap:10px; overflow-y:auto; min-height:0; }
+  .right-col > * { flex-shrink:0; }
+  .sig-card { padding:13px 16px; }
+  .sig-hdr  { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .sig-title { font-size:13px; font-weight:700; color:var(--text); }
+  .sig-live  { font-size:9px; font-weight:700; padding:3px 9px; border-radius:20px; background:var(--green-lt); color:#059669; border:1px solid rgba(16,185,129,.25); display:flex; align-items:center; gap:4px; }
+  .live-dot  { width:5px; height:5px; border-radius:50%; background:#10b981; animation:pulse 1.5s infinite; }
+  .sig-box   { text-align:center; padding:13px 10px; border-radius:14px; margin-bottom:9px; min-height:82px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .sig-box.buy  { background:linear-gradient(135deg,#dcfce7,#bbf7d0); border:1px solid rgba(16,185,129,.2); }
+  .sig-box.sell { background:linear-gradient(135deg,#fee2e2,#fecaca); border:1px solid rgba(244,63,94,.2); }
+  .sig-box.hold { background:linear-gradient(135deg,#fef9c3,#fef08a); border:1px solid rgba(245,158,11,.2); }
+  .sig-icon { font-size:28px; }
+  .sig-name { font-size:14px; font-weight:800; margin-top:3px; }
+  .sig-desc { font-size:10px; margin-top:2px; }
+  .sig-str  { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--text-3); }
+  .str-bar  { flex:1; height:5px; background:#f1f5f9; border-radius:3px; overflow:hidden; }
+  .str-fill { height:100%; background:var(--accent); border-radius:3px; transition:width .5s; }
+  .rsi-card { padding:13px 16px; }
+  .rsi-num  { font-size:32px; font-weight:800; color:var(--yellow); text-align:center; margin:5px 0 2px; }
+  .rsi-sub  { font-size:10px; color:var(--text-3); text-align:center; margin-bottom:9px; }
+  .rsi-track { height:8px; border-radius:4px; background:linear-gradient(90deg,#10b981,#f59e0b,#f43f5e); position:relative; }
+  .rsi-ptr   { position:absolute; top:-4px; width:16px; height:16px; background:#fff; border:2.5px solid var(--yellow); border-radius:50%; box-shadow:0 2px 8px rgba(0,0,0,.15); transform:translateX(-50%); transition:left .5s; }
+  .rsi-ticks { display:flex; justify-content:space-between; margin-top:5px; font-size:9px; color:var(--text-3); }
+  .stats-card { padding:13px 16px; }
+  .sc-title   { font-size:13px; font-weight:700; color:var(--text); margin-bottom:10px; }
+  .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+  .sg-item    { padding:8px 10px; background:#f8fafc; border-radius:11px; }
+  .sg-label   { font-size:9px; color:var(--text-3); font-weight:500; }
+  .sg-val     { font-size:14px; font-weight:800; color:var(--text); margin-top:2px; }
+  .ma-card { padding:13px 16px; }
+  .ma-row  { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid #f1f5f9; }
+  .ma-row:last-child { border-bottom:none; }
+  .ma-pd   { font-size:11px; font-weight:600; color:var(--text-3); width:44px; }
+  .ma-bar-w { flex:1; margin:0 8px; height:4px; background:#f1f5f9; border-radius:2px; overflow:hidden; }
+  .ma-bar-f { height:100%; border-radius:2px; }
+  .ma-v { font-size:11px; font-weight:700; min-width:72px; text-align:right; }
+  .mup { color:#16a34a; } .mdn { color:#dc2626; }
+
+  /* ── 뉴스 바 ── */
+  .news-bar {
+    background:rgba(255,255,255,0.13); backdrop-filter:blur(20px);
+    border-top:1px solid rgba(255,255,255,.22);
+    display:grid; grid-template-columns:auto 1fr auto;
+    align-items:center; overflow:hidden; z-index:20;
+  }
+  .news-tabs { display:flex; align-items:center; height:100%; flex-shrink:0; }
+  .news-label {
+    padding:0 14px; font-size:10px; font-weight:800; letter-spacing:1px;
+    color:#fff; background:rgba(124,58,237,.5); border-right:1px solid rgba(255,255,255,.2);
+    height:100%; display:flex; align-items:center; gap:6px;
+  }
+  .news-label-dot { width:6px; height:6px; border-radius:50%; background:#fff; animation:pulse 1.5s infinite; }
+  .news-track-wrap { overflow:hidden; position:relative; height:100%; }
+  .news-track-wrap::before,.news-track-wrap::after {
+    content:''; position:absolute; top:0; bottom:0; width:30px; z-index:2; pointer-events:none;
+  }
+  .news-track-wrap::before { left:0;  background:linear-gradient(90deg,rgba(102,126,234,.4),transparent); }
+  .news-track-wrap::after  { right:0; background:linear-gradient(-90deg,rgba(245,87,108,.4),transparent); }
+  .news-track { display:flex; align-items:center; height:100%; white-space:nowrap; animation:newsScroll 70s linear infinite; }
+  .news-track:hover { animation-play-state:paused; }
+  @keyframes newsScroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+  .news-item { display:inline-flex; align-items:center; gap:8px; padding:0 20px; height:100%; cursor:pointer; border-right:1px solid rgba(255,255,255,.1); transition:background .15s; flex-shrink:0; }
+  .news-item:hover { background:rgba(255,255,255,.08); }
+  .news-tag  { font-size:9px; font-weight:700; padding:2px 6px; border-radius:4px; flex-shrink:0; }
+  .tag-pos { background:rgba(16,185,129,.25); color:#10b981; }
+  .tag-neg { background:rgba(244,63,94,.25);  color:#f43f5e; }
+  .tag-neu { background:rgba(255,255,255,.18); color:rgba(255,255,255,.8); }
+  .news-source    { font-size:9px; font-weight:700; color:rgba(255,255,255,.6); flex-shrink:0; }
+  .news-headline  { font-size:11px; font-weight:500; color:rgba(255,255,255,.8); max-width:300px; overflow:hidden; text-overflow:ellipsis; }
+  .news-time      { font-size:9px; color:rgba(255,255,255,.4); flex-shrink:0; }
+  .news-controls  { display:flex; align-items:center; gap:6px; padding:0 12px; flex-shrink:0; border-left:1px solid rgba(255,255,255,.15); height:100%; }
+  .news-ctrl-btn  { width:24px; height:24px; border-radius:6px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:rgba(255,255,255,.8); font-size:11px; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .2s; }
+  .news-ctrl-btn:hover { background:rgba(255,255,255,.22); }
+
+  /* 로딩 스켈레톤 */
+  .skeleton { background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size:200% 100%; animation:shimmer 1.5s infinite; border-radius:6px; }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  /* ── 기존 에러 토스트 ── */
+  .error-toast { position:fixed; top:70px; right:20px; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:12px; padding:10px 16px; font-size:12px; z-index:100; display:none; max-width:280px; }
+
+  /* ════════════════════════════════════════
+     신호 알림 토스트 (슬라이드인)
+  ════════════════════════════════════════ */
+  .signal-toast {
+    position:fixed; right:20px; top:-160px; z-index:990;
+    background:#fff; border-radius:18px; padding:15px 18px;
+    display:flex; align-items:center; gap:13px;
+    box-shadow:0 14px 50px rgba(0,0,0,.18);
+    border-left:5px solid #10b981;
+    transition:top .45s cubic-bezier(.34,1.56,.64,1);
+    min-width:300px; max-width:370px;
+  }
+  .signal-toast.show { top:70px; }
+  .signal-toast.toast-buy  { border-left-color:#10b981; background:linear-gradient(135deg,#f0fdf4 0%,#fff 60%); }
+  .signal-toast.toast-sell { border-left-color:#f43f5e; background:linear-gradient(135deg,#fff1f2 0%,#fff 60%); }
+  .signal-toast.toast-hold { border-left-color:#f59e0b; background:linear-gradient(135deg,#fffbeb 0%,#fff 60%); }
+  .st-icon  { font-size:32px; flex-shrink:0; }
+  .st-body  { flex:1; min-width:0; }
+  .st-badge { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; }
+  .st-badge.buy-txt  { color:#059669; }
+  .st-badge.sell-txt { color:#dc2626; }
+  .st-badge.hold-txt { color:#d97706; }
+  .st-title { font-size:13px; font-weight:800; color:#1e1b4b; margin-top:2px; line-height:1.3; }
+  .st-sub   { font-size:10px; color:#64748b; margin-top:3px; white-space:normal; }
+  .st-time  { font-size:9px; color:#94a3b8; margin-top:4px; }
+  .st-close { cursor:pointer; color:#94a3b8; font-size:18px; padding:2px 4px; flex-shrink:0; line-height:1; }
+  .st-close:hover { color:#475569; }
+
+  /* ════════════════════════════════════════
+     알림 아이콘 + 드롭다운
+  ════════════════════════════════════════ */
+  .notif-wrap { position:relative; }
+  .notif-badge {
+    position:absolute; top:-3px; right:-3px;
+    min-width:16px; height:16px; border-radius:8px;
+    background:#f43f5e; color:#fff;
+    font-size:9px; font-weight:800;
+    display:none; align-items:center; justify-content:center;
+    border:2px solid rgba(102,126,234,0.5); padding:0 3px;
+  }
+  .notif-badge.show { display:flex; }
+  .notif-panel {
+    position:absolute; top:44px; right:0; width:310px;
+    background:#fff; border-radius:18px;
+    box-shadow:0 12px 44px rgba(0,0,0,.16);
+    border:1px solid rgba(0,0,0,.07);
+    z-index:500; display:none; overflow:hidden;
+  }
+  .notif-panel.open { display:block; }
+  .np-header { padding:13px 16px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; }
+  .np-title  { font-size:13px; font-weight:700; color:#1e1b4b; }
+  .np-clear  { font-size:10px; color:#94a3b8; cursor:pointer; padding:3px 8px; border-radius:6px; transition:all .2s; }
+  .np-clear:hover { background:#fee2e2; color:#dc2626; }
+  .np-list   { max-height:260px; overflow-y:auto; }
+  .np-item   { padding:11px 16px; border-bottom:1px solid #f8fafc; display:flex; align-items:flex-start; gap:10px; cursor:default; }
+  .np-item:last-child { border-bottom:none; }
+  .npi-icon  { font-size:20px; flex-shrink:0; margin-top:1px; }
+  .npi-text  { flex:1; min-width:0; }
+  .npi-title { font-size:11px; font-weight:700; color:#1e1b4b; }
+  .npi-sub   { font-size:10px; color:#64748b; margin-top:2px; white-space:normal; }
+  .npi-time  { font-size:9px; color:#94a3b8; margin-top:3px; }
+  .np-empty  { padding:24px; text-align:center; color:#94a3b8; font-size:12px; }
+
+  /* ════════════════════════════════════════
+     포트폴리오 히스토리 모달
+  ════════════════════════════════════════ */
+  .hist-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,.32);
+    z-index:598; display:none; backdrop-filter:blur(6px);
+  }
+  .hist-overlay.open { display:block; }
+  .hist-panel {
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(.95);
+    width:540px; max-height:540px;
+    background:#fff; border-radius:22px;
+    box-shadow:0 24px 70px rgba(0,0,0,.22);
+    z-index:599; display:none; flex-direction:column;
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1), opacity .25s;
+    opacity:0;
+  }
+  .hist-panel.open { display:flex; transform:translate(-50%,-50%) scale(1); opacity:1; }
+  .hist-header { padding:18px 22px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .hist-title  { font-size:15px; font-weight:800; color:#1e1b4b; }
+  .hist-subtitle { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .hist-close  { cursor:pointer; color:#94a3b8; font-size:22px; line-height:1; }
+  .hist-close:hover { color:#f43f5e; }
+  .hist-body   { flex:1; overflow-y:auto; padding:18px 22px; }
+  .hist-chart-wrap { height:190px; margin-bottom:18px; }
+  .hist-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+  .hs-card  { background:#f8fafc; border-radius:12px; padding:10px 13px; }
+  .hs-label { font-size:9px; color:#94a3b8; font-weight:600; }
+  .hs-val   { font-size:17px; font-weight:800; color:#1e1b4b; margin-top:3px; }
+  .hist-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .hist-table th { text-align:left; padding:6px 10px; color:#94a3b8; font-size:10px; font-weight:600; border-bottom:1px solid #f1f5f9; }
+  .hist-table td { padding:8px 10px; border-bottom:1px solid #f8fafc; font-weight:500; }
+  .hist-table tr:last-child td { border-bottom:none; }
+  .ht-up { color:#059669; font-weight:700; }
+  .ht-dn { color:#dc2626; font-weight:700; }
+  .hist-empty { text-align:center; padding:30px; color:#94a3b8; font-size:12px; }
+
+  /* ════════════════════════════════════════
+     관심종목 신호 배지
+  ════════════════════════════════════════ */
+  .wi-sig { font-size:8px; font-weight:700; padding:2px 6px; border-radius:4px; margin-top:3px; display:inline-block; letter-spacing:.3px; }
+  .wis-buy  { background:rgba(16,185,129,.2);  color:#10b981; border:1px solid rgba(16,185,129,.3); }
+  .wis-sell { background:rgba(244,63,94,.2);   color:#f43f5e; border:1px solid rgba(244,63,94,.3); }
+  .wis-hold { background:rgba(245,158,11,.2);  color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
+  .wis-watch{ background:rgba(59,130,246,.2);  color:#60a5fa; border:1px solid rgba(59,130,246,.3); }
+
+  /* ════════════════════════════════════════
+     종목 전략/지표/컨센서스 카드 (우측 패널)
+  ════════════════════════════════════════ */
+  .detail-section { padding:12px 16px; }
+  .ds-title { font-size:12px; font-weight:700; color:var(--text); margin-bottom:9px; display:flex; align-items:center; gap:6px; }
+  .ds-title::before { content:''; display:inline-block; width:3px; height:14px; background:var(--accent); border-radius:2px; }
+  .verdict-box { background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(168,85,247,.03)); border:1px solid rgba(124,58,237,.15); border-radius:12px; padding:11px 13px; margin-bottom:9px; }
+  .vb-action { font-size:13px; font-weight:800; margin-bottom:4px; }
+  .vb-act-buy  { color:#15803d; } .vb-act-sell { color:#b91c1c; }
+  .vb-act-hold { color:#a16207; } .vb-act-watch{ color:#1d4ed8; }
+  .vb-reason { font-size:10px; color:var(--text-2); line-height:1.6; }
+  .vb-levels { display:flex; gap:8px; margin-top:7px; flex-wrap:wrap; }
+  .vbl { font-size:9px; color:var(--text-3); } .vbl span { font-weight:700; margin-left:2px; }
+  .vbl-s { color:#10b981; } .vbl-r { color:#f43f5e; }
+  .ind-tbl { width:100%; border-collapse:collapse; font-size:10px; margin-bottom:2px; }
+  .ind-tbl th { text-align:left; padding:4px 6px 5px; color:var(--text-3); font-size:9px; font-weight:600; border-bottom:1px solid #f1f5f9; }
+  .ind-tbl td { padding:5px 6px; border-bottom:1px solid #f8fafc; color:var(--text); vertical-align:middle; }
+  .ind-tbl tr:last-child td { border-bottom:none; }
+  .ind-bar-w { width:50px; height:3px; background:#f1f5f9; border-radius:2px; display:inline-block; vertical-align:middle; margin-left:4px; }
+  .ind-bar-f { height:100%; border-radius:2px; }
+  .ibf-g { background:#10b981; } .ibf-r { background:#f43f5e; } .ibf-n { background:#94a3b8; }
+  .ind-sig-bull { color:#10b981; font-weight:700; } .ind-sig-bear { color:#f43f5e; font-weight:700; } .ind-sig-neu { color:#94a3b8; font-weight:600; }
+  .cns-tbl { width:100%; border-collapse:collapse; font-size:10px; }
+  .cns-tbl th { text-align:right; padding:4px 6px 5px; color:var(--text-3); font-size:9px; font-weight:600; border-bottom:1px solid #f1f5f9; }
+  .cns-tbl th:first-child { text-align:left; }
+  .cns-tbl td { padding:5px 6px; border-bottom:1px solid #f8fafc; text-align:right; font-size:10px; }
+  .cns-tbl td:first-child { text-align:left; color:var(--text-3); }
+  .cns-tbl tr:last-child td { border-bottom:none; }
+  .cu { color:#16a34a; font-weight:600; } .cd { color:#dc2626; font-weight:600; }
+  .sn-item { padding:8px 0; border-bottom:1px solid #f1f5f9; cursor:pointer; }
+  .sn-item:last-child { border-bottom:none; }
+  .sn-item:hover { opacity:.8; }
+  .sn-date { font-size:9px; color:var(--text-3); margin-bottom:2px; }
+  .sn-title { font-size:10px; color:var(--text); line-height:1.4; margin-bottom:3px; }
+  .sn-tag { font-size:9px; padding:1px 5px; border-radius:3px; font-weight:600; }
+  .snt-pos { background:#dcfce7; color:#16a34a; } .snt-neg { background:#fee2e2; color:#dc2626; } .snt-neu { background:#f1f5f9; color:#64748b; }
+  .no-stock-hint { text-align:center; padding:16px 10px; color:var(--text-3); font-size:11px; line-height:1.7; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ══ NAV ══ -->
+  <div class="topnav">
+    <div class="nav-brand">stock<span>flow</span> ✦</div>
+    <div class="nav-pills">
+      <div class="nav-pill active">대시보드</div>
+      <div class="nav-pill">포트폴리오</div>
+      <div class="nav-pill">스크리너</div>
+      <div class="nav-pill">뉴스</div>
+    </div>
+
+    <!-- 연결 상태 -->
+    <div class="conn-status">
+      <div class="conn-dot loading" id="connDot"></div>
+      <span class="conn-label" id="connLabel">연결 중...</span>
+      <span class="conn-time"  id="connTime"></span>
+      <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">
+        <span class="refresh-icon" id="refreshIcon">↻</span> 새로고침
+      </button>
+    </div>
+
+    <div class="nav-actions" style="display:flex;gap:8px;">
+      <!-- 🔔 알림 아이콘 -->
+      <div class="notif-wrap">
+        <div class="nav-icon" id="bellBtn" onclick="toggleNotifPanel()" title="알림 내역">🔔</div>
+        <div class="notif-badge" id="notifBadge">0</div>
+        <div class="notif-panel" id="notifPanel">
+          <div class="np-header">
+            <span class="np-title">📋 신호 알림 내역</span>
+            <span class="np-clear" onclick="clearAlerts()">모두 지우기</span>
+          </div>
+          <div class="np-list" id="notifList">
+            <div class="np-empty">아직 신호 알림이 없습니다.</div>
+          </div>
+        </div>
+      </div>
+      <div class="avatar">K</div>
+    </div>
+  </div>
+
+  <!-- ══ CONTENT ══ -->
+  <div class="content">
+
+    <!-- ═══ LEFT ═══ -->
+    <div class="left-col">
+      <!-- 포트폴리오 수익률 vs 목표 -->
+      <div class="glass-white port-card">
+        <div class="port-header">
+          <span class="port-title">📈 포트폴리오 수익률</span>
+          <span class="port-period" id="portYear" onclick="openHistoryPanel()" title="히스토리 보기">2026년 기준 📋</span>
+        </div>
+        <div class="status-row">
+          <div class="status-badge badge-ahead" id="statusBadge">
+            <div class="badge-dot"></div><span id="statusText">로딩 중...</span>
+          </div>
+          <div class="status-gap" id="gapText">-</div>
+        </div>
+        <div class="port-nums">
+          <div class="pn-item actual">
+            <div class="pn-label">실제 누적 수익률</div>
+            <div class="pn-val" id="actualVal">--.--%</div>
+            <div class="pn-sub" id="evalAmtText">평가금액 로딩 중</div>
+          </div>
+          <div class="pn-item target">
+            <div class="pn-label">목표 수익률 (연20%)</div>
+            <div class="pn-val" id="targetVal">--.--%</div>
+            <div class="pn-sub" id="targetMonthText">-- 개월 기준</div>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <div class="leg-item"><div class="leg-line" style="background:var(--accent);"></div>실제</div>
+          <div class="leg-item"><div class="leg-dash" style="border-color:var(--blue);"></div>목표(연20%)</div>
+          <div class="leg-item"><div style="width:12px;height:9px;border-radius:3px;background:rgba(16,185,129,.25);"></div><span style="color:#10b981;">초과</span></div>
+        </div>
+        <div class="port-chart-wrap"><canvas id="portChart"></canvas></div>
+      </div>
+
+      <!-- 관심종목 -->
+      <div class="glass wl-card" style="flex:1;">
+        <div class="wl-hdr">
+          <span class="wl-title-txt">관심종목</span>
+          <span style="font-size:10px;color:rgba(255,255,255,.5);" id="wlUpdated">-</span>
+        </div>
+        <div class="wl-scroll" id="watchlistEl">
+          <div style="padding:16px;text-align:center;color:rgba(255,255,255,.5);font-size:12px;">로딩 중...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ CENTER ═══ -->
+    <div class="center-col">
+      <!-- HERO -->
+      <div class="glass-white hero">
+        <div class="hero-top">
+          <div>
+            <div class="h-badge" id="heroMarket">KOSPI · 005930</div>
+            <div class="h-name" id="heroName">삼성전자</div>
+            <div class="h-sub"  id="heroSub">Samsung Electronics · 전기전자</div>
+          </div>
+          <div>
+            <div class="h-price" id="heroPrice">₩--,---</div>
+            <div class="h-chg">
+              <span class="chg-abs" id="heroChangeAbs">-</span>
+              <span class="chip chip-up" id="heroChangePct">--%</span>
+            </div>
+          </div>
+        </div>
+        <div class="tf-bar" id="tfBar">
+          <button class="tf" data-p="1D">1D</button>
+          <button class="tf" data-p="3D">3D</button>
+          <button class="tf on" data-p="1W">1W</button>
+          <button class="tf" data-p="1M">1M</button>
+          <button class="tf" data-p="3M">3M</button>
+          <button class="tf" data-p="6M">6M</button>
+          <button class="tf" data-p="1Y">1Y</button>
+        </div>
+      </div>
+
+      <!-- PRICE CHART -->
+      <div class="glass-white price-card">
+        <div class="pc-top">
+          <span class="pc-title">가격 차트</span>
+          <div class="pc-legends">
+            <div class="pcl"><div class="pcl-line" style="background:var(--accent);"></div>종가</div>
+            <div class="pcl"><div class="pcl-dash" style="border-color:#f59e0b;"></div>MA5</div>
+            <div class="pcl"><div class="pcl-dash" style="border-color:#10b981;"></div>MA20</div>
+            <div class="pcl"><div class="pcl-dash" style="border-color:#94a3b8;opacity:.6;"></div>BB상단</div>
+            <div class="pcl"><div class="pcl-dash" style="border-color:#94a3b8;opacity:.6;"></div>BB하단</div>
+          </div>
+        </div>
+        <div class="price-h"><canvas id="priceChart"></canvas></div>
+      </div>
+
+      <!-- INDICATORS -->
+      <div class="ind-strip">
+        <div class="ind-card">
+          <div class="ic-label">RSI (14)</div>
+          <div class="ic-val" id="rsiVal" style="color:var(--yellow);">--.-</div>
+          <div class="ic-sub" id="rsiSub">계산 중</div>
+          <div class="ic-bar"><div class="ic-fill" id="rsiBar" style="width:0%;background:var(--yellow);"></div></div>
+        </div>
+        <div class="ind-card">
+          <div class="ic-label">MACD</div>
+          <div class="ic-val" id="macdVal" style="color:var(--green);">--</div>
+          <div class="ic-sub" id="macdSub">계산 중</div>
+          <div class="ic-bar"><div class="ic-fill" id="macdBar" style="width:0%;background:var(--green);"></div></div>
+        </div>
+        <div class="ind-card">
+          <div class="ic-label">볼린저밴드 %B</div>
+          <div class="ic-val" id="bbVal" style="color:var(--accent);">--</div>
+          <div class="ic-sub" id="bbSub">계산 중</div>
+          <div class="ic-bar"><div class="ic-fill" id="bbBar" style="width:0%;background:var(--accent);"></div></div>
+        </div>
+        <div class="ind-card">
+          <div class="ic-label">거래량</div>
+          <div class="ic-val" id="volVal" style="color:var(--blue);">--만주</div>
+          <div class="ic-sub" id="volSub">실시간</div>
+          <div class="ic-bar"><div class="ic-fill" id="volBar" style="width:0%;background:var(--blue);"></div></div>
+        </div>
+      </div>
+
+      <!-- VOLUME CHART -->
+      <div class="glass-white vol-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+          <span style="font-size:12px;font-weight:700;color:var(--text);">거래량</span>
+          <span style="font-size:10px;color:var(--text-3);" id="volLabel">-</span>
+        </div>
+        <div class="vol-h"><canvas id="volChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ═══ RIGHT ═══ -->
+    <div class="right-col">
+      <!-- 시그널 -->
+      <div class="glass-white sig-card">
+        <div class="sig-hdr">
+          <span class="sig-title">거래 시그널</span>
+          <div class="sig-live"><div class="live-dot"></div>LIVE</div>
+        </div>
+        <div class="sig-box buy" id="sigBox">
+          <div class="sig-icon" id="sigIcon">📊</div>
+          <div class="sig-name" id="sigName" style="color:#15803d;">분석 중</div>
+          <div class="sig-desc" id="sigDesc" style="color:#166534;">데이터 로딩 중</div>
+        </div>
+        <div class="sig-str">
+          <span>신호 강도</span>
+          <div class="str-bar"><div class="str-fill" id="strFill" style="width:0%;"></div></div>
+          <span style="color:var(--accent);font-weight:700;" id="strLabel">-</span>
+        </div>
+      </div>
+
+      <!-- RSI 게이지 -->
+      <div class="glass-white rsi-card">
+        <div style="font-size:13px;font-weight:700;color:var(--text);">RSI (14)</div>
+        <div class="rsi-num" id="rsiGaugeNum">--.-</div>
+        <div class="rsi-sub" id="rsiGaugeSub">계산 중</div>
+        <div class="rsi-track"><div class="rsi-ptr" id="rsiPtr" style="left:50%;"></div></div>
+        <div class="rsi-ticks"><span>0</span><span>과매도 30</span><span>과매수 70</span><span>100</span></div>
+      </div>
+
+      <!-- 주요 지표 -->
+      <div class="glass-white stats-card">
+        <div class="sc-title">주요 지표</div>
+        <div class="stats-grid">
+          <div class="sg-item"><div class="sg-label">시가총액</div><div class="sg-val" id="sMktCap">--</div></div>
+          <div class="sg-item"><div class="sg-label">PER</div><div class="sg-val" id="sPer">--</div></div>
+          <div class="sg-item"><div class="sg-label">52주 최고</div><div class="sg-val" id="sW52H" style="color:#16a34a;">--</div></div>
+          <div class="sg-item"><div class="sg-label">52주 최저</div><div class="sg-val" id="sW52L" style="color:#dc2626;">--</div></div>
+          <div class="sg-item"><div class="sg-label">PBR</div><div class="sg-val" id="sPbr">--</div></div>
+          <div class="sg-item"><div class="sg-label">코스피</div><div class="sg-val" id="sKospi" style="font-size:12px;">--</div></div>
+        </div>
+      </div>
+
+      <!-- 이동평균 -->
+      <div class="glass-white ma-card">
+        <div class="sc-title">이동평균선</div>
+        <div id="maList">
+          <div style="font-size:11px;color:var(--text-3);text-align:center;padding:10px;">차트 데이터 로딩 중...</div>
+        </div>
+      </div>
+
+      <!-- 시장 지수 -->
+      <div class="glass-white" style="padding:13px 16px;">
+        <div class="sc-title">시장 지수</div>
+        <div style="display:flex;flex-direction:column;gap:8px;" id="marketPanel">
+          <div style="display:flex;justify-content:space-between;padding:8px 10px;background:#f8fafc;border-radius:10px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text-3);">KOSPI</span>
+            <span style="font-size:13px;font-weight:800;color:var(--text);" id="kospiVal">--</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:8px 10px;background:#f8fafc;border-radius:10px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text-3);">KOSDAQ</span>
+            <span style="font-size:13px;font-weight:800;color:var(--text);" id="kosdaqVal">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 투자 전략 -->
+      <div class="glass-white" id="stratCard">
+        <div class="detail-section">
+          <div class="ds-title">투자 전략</div>
+          <div id="stratContent" class="no-stock-hint">👆 관심종목을 클릭하면<br>종목별 전략이 표시됩니다</div>
+        </div>
+      </div>
+
+      <!-- 핵심 지표 -->
+      <div class="glass-white" id="indCard">
+        <div class="detail-section">
+          <div class="ds-title">핵심 지표</div>
+          <div id="indContent" class="no-stock-hint" style="padding:10px 0;">-</div>
+        </div>
+      </div>
+
+      <!-- 실적 컨센서스 -->
+      <div class="glass-white" id="cnsCard">
+        <div class="detail-section">
+          <div class="ds-title">실적 컨센서스</div>
+          <div id="cnsContent" class="no-stock-hint" style="padding:10px 0;">-</div>
+        </div>
+      </div>
+
+      <!-- 종목 뉴스 (정적) -->
+      <div class="glass-white" id="stockNewsCard">
+        <div class="detail-section">
+          <div class="ds-title">종목 뉴스</div>
+          <div id="stockNewsContent" class="no-stock-hint">종목 선택 시 최신 뉴스가<br>표시됩니다</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 뉴스 바 ══ -->
+  <div class="news-bar">
+    <div class="news-tabs">
+      <div class="news-label"><div class="news-label-dot"></div>종목 뉴스</div>
+    </div>
+    <div class="news-track-wrap">
+      <div class="news-track" id="newsTrack">
+        <div class="news-item">
+          <span class="news-tag tag-neu">안내</span>
+          <span class="news-headline">관심종목을 클릭하면 해당 종목의 최신 뉴스가 표시됩니다</span>
+        </div>
+      </div>
+    </div>
+    <div class="news-controls">
+      <div class="news-ctrl-btn" id="pauseBtn" onclick="toggleNewsPause()">⏸</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 신호 알림 토스트 ══ -->
+<div class="signal-toast toast-buy" id="signalToast">
+  <div class="st-icon" id="stIcon">📈</div>
+  <div class="st-body">
+    <div class="st-badge buy-txt" id="stBadge">매수 신호</div>
+    <div class="st-title" id="stTitle">삼성전자 · 005930</div>
+    <div class="st-sub"   id="stSub">MA 골든크로스 + RSI 과매도 구간 진입</div>
+    <div class="st-time"  id="stTime">09:32</div>
+  </div>
+  <div class="st-close" onclick="closeSignalToast()">✕</div>
+</div>
+
+<!-- ══ 에러 토스트 ══ -->
+<div class="error-toast" id="errToast"></div>
+
+<!-- ══ 포트폴리오 히스토리 모달 ══ -->
+<div class="hist-overlay" id="histOverlay" onclick="closeHistoryPanel()"></div>
+<div class="hist-panel" id="histPanel">
+  <div class="hist-header">
+    <div>
+      <div class="hist-title">📋 포트폴리오 히스토리</div>
+      <div class="hist-subtitle">매일 자동 기록 · localStorage 저장</div>
+    </div>
+    <div class="hist-close" onclick="closeHistoryPanel()">✕</div>
+  </div>
+  <div class="hist-body">
+    <div class="hist-chart-wrap"><canvas id="histChart"></canvas></div>
+    <div class="hist-summary" id="histSummary"></div>
+    <table class="hist-table">
+      <thead>
+        <tr>
+          <th>날짜</th><th>수익률</th><th>목표</th><th>차이</th>
+        </tr>
+      </thead>
+      <tbody id="histTableBody">
+        <tr><td colspan="4" class="hist-empty">히스토리가 없습니다.<br>대시보드를 사용할수록 자동 기록됩니다.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════
+   35종목 전략 데이터
+════════════════════════════════════════════════ */
+const STOCKS_DATA = {
+  "005930":{name:"삼성전자",sector:"반도체/HBM/AI",signal:"buy",badge:"분할매수",
+    verdict:"양운 상단 지지 테스트 중. CMF 소폭 음전환이나 PEG 0.1 미만 극저평가. 175,000 구름 지지 + CMF 회복 시 강력 매수.",
+    action:"분할매수",support:[175000,167000,155000],resist:[190000,200000,223000],
+    indicators:[{n:"일목 구름대",v:"구름 상단",sig:"neutral",sc:55},{n:"CMF(20)",v:"-0.05",sig:"bear",sc:38},{n:"RSI(14)",v:"47.5",sig:"neutral",sc:48},{n:"PEG(Fwd)",v:"0.1 미만",sig:"bull",sc:90},{n:"20일 MA",v:"지지 테스트",sig:"neutral",sc:52}],
+    consensus:[{y:"2025A",s:"333.6조",o:"43.6조",e:"+86%"},{y:"2026F",s:"390조",o:"175조",e:"+301%"},{y:"2027F",s:"420조",o:"200조",e:"+14%"},{y:"2028F",s:"440조",o:"210조",e:"+5%"}],
+    news:[{d:"2026-04-03",t:"현재가 175,000 구름대 지지 여부 모니터링.",imp:"neu"},{d:"2026-02-11",t:"HBM4 기대감 + 20일선 지지. 167,800원 매수.",imp:"pos"},{d:"2025-11-17",t:"기준선 지지 반등 100,600원 매수. +44.3% 익절.",imp:"pos"}]},
+  "000660":{name:"SK하이닉스",sector:"반도체/HBM",signal:"buy",badge:"매수",
+    verdict:"기준선(883,900) 터치 반등 시도. CMF 양수. 1Q26 영업이익 37조 기대. ATR 손절 835,000 유지.",
+    action:"매수",support:[860000,835000,800000],resist:[920000,960000,1000000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:76},{n:"CMF(20)",v:"0.08",sig:"bull",sc:65},{n:"RSI(14)",v:"51.7",sig:"neutral",sc:52},{n:"ATR(14)",v:"20,642",sig:"neutral",sc:50},{n:"Williams%R",v:"-4.1",sig:"bear",sc:20}],
+    consensus:[{y:"2025A",s:"97.15조",o:"47.21조",e:"+100%+"},{y:"2026F",s:"230.2조",o:"170조",e:"+213%"},{y:"2027F",s:"271.0조",o:"202조",e:"+16%"},{y:"2028F",s:"291.8조",o:"215조",e:"+7%"}],
+    news:[{d:"2026-04-02",t:"1분기 영업이익만 37조원 전망. 목표가 상향 지속.",imp:"pos"},{d:"2026-03-24",t:"외국인 1.2조 투매. 933,000원 손절 실행.",imp:"neg"},{d:"2026-03-10",t:"노무라 2027 영업이익 365조 전망.",imp:"pos"}]},
+  "005380":{name:"현대자동차",sector:"자동차",signal:"watch",badge:"매수추적",
+    verdict:"구름대 상단 지지 구간. CMF 소폭 음전환이나 OBV 고점 유지. RSI 40 부근 지지 확인 시 진입 검토.",
+    action:"매수추적",support:[454084,440000,405000],resist:[480000,495000,510000],
+    indicators:[{n:"일목 구름대",v:"구름 상단",sig:"bull",sc:62},{n:"CMF(20)",v:"-0.05",sig:"bear",sc:35},{n:"RSI(14)",v:"42.3",sig:"neutral",sc:42},{n:"ATR(14)",v:"10,767",sig:"neutral",sc:50},{n:"Kijun-sen",v:"454,084",sig:"neutral",sc:48}],
+    consensus:[{y:"2025A",s:"186.3조",o:"11.5조",e:"-21.7%"},{y:"2026F",s:"189.5조",o:"12.8조",e:"+11.4%"},{y:"2027F",s:"202.5조",o:"14.3조",e:"+10.5%"},{y:"2028F",s:"215.0조",o:"15.5조",e:"+8.9%"}],
+    news:[{d:"2026-04-03",t:"2025년 영업이익 11.47조원 — 전년比 19.5% 감소.",imp:"neg"},{d:"2026-03-15",t:"밸류업 프로그램 지속. PBR 1배 달성 목표 재확인.",imp:"pos"},{d:"2026-02-20",t:"로보틱스 모멘텀 결합 폭발 시세. 3월 495,000원 고점.",imp:"pos"}]},
+  "012450":{name:"한화에어로스페이스",sector:"방산/우주",signal:"buy",badge:"보유",
+    verdict:"CMF 0.12 견조. 구름대 상방 정배열. 기준선(1,344,428) 지지. 목표가 155~165만. 보유 유지.",
+    action:"보유",support:[1344428,1300000,1250000],resist:[1500000,1600000,1650000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:82},{n:"CMF(20)",v:"0.12",sig:"bull",sc:75},{n:"RSI(14)",v:"61.2",sig:"bull",sc:61},{n:"ATR(14)",v:"29,428",sig:"neutral",sc:50},{n:"Kijun-sen",v:"1,344,428",sig:"bull",sc:72}],
+    consensus:[{y:"2025E",s:"26.61조",o:"3.03조",e:"-39%"},{y:"2026F",s:"31.35조",o:"4.47조",e:"+75%"},{y:"2027F",s:"34.38조",o:"5.44조",e:"+24%"},{y:"2028F",s:"38.50조",o:"6.25조",e:"+19%"}],
+    news:[{d:"2026-04-02",t:"고점 부근 매물 소화 구간. CMF 견조.",imp:"pos"},{d:"2026-03-25",t:"루마니아 레드백 수출 파이프라인 구체화.",imp:"pos"},{d:"2026-03-15",t:"폴란드 K9 EC2 실행계약. 2026~2027 매출 견인.",imp:"pos"}]},
+  "005490":{name:"POSCO홀딩스",sector:"철강/리튬/소재",signal:"buy",badge:"보유",
+    verdict:"CMF 0.22 — 2026년 최고 수준 자금 유입. OBV 전고점 돌파. 리튬 가격 반등 + EPS 243% 성장 컨센. 기준선 지지 확인 후 보유.",
+    action:"보유",support:[312000,300000,285000],resist:[350000,375000,400000],
+    indicators:[{n:"일목 구름대",v:"양운 상방",sig:"bull",sc:80},{n:"CMF(20)",v:"0.22",sig:"bull",sc:82},{n:"RSI(14)",v:"58.0",sig:"bull",sc:58},{n:"OBV",v:"전고점 돌파",sig:"bull",sc:75},{n:"Kijun-sen",v:"312,000",sig:"bull",sc:70}],
+    consensus:[{y:"2025잠정",s:"69.1조",o:"1.83조",e:"-16%"},{y:"2026F",s:"71.5조",o:"3.29조",e:"+243%"},{y:"2027F",s:"74.1조",o:"3.71조",e:"+18%"},{y:"2028F",s:"78.0조",o:"4.17조",e:"+12%"}],
+    news:[{d:"2026-03-25",t:"아르헨티나 리튬 1공장 본격 가동.",imp:"pos"},{d:"2026-03-10",t:"리튬가 급등 + CMF 0.25 양전환. 강력 매수 신호.",imp:"pos"},{d:"2026-01-29",t:"2025년 영업이익 15% 감소. 바닥 통과 공식화.",imp:"neu"}]},
+  "373220":{name:"LG에너지솔루션",sector:"2차전지/ESS",signal:"buy",badge:"매수",
+    verdict:"200일선 위 안착. 골든크로스. CMF 양전환. ESS 수익 본격화. 테슬라 43억달러 LFP 계약 확정.",
+    action:"매수",support:[399115,388000,365000],resist:[420000,440000,460000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:72},{n:"CMF(20)",v:"0.08",sig:"bull",sc:65},{n:"RSI(14)",v:"59.7",sig:"bull",sc:60},{n:"Williams%R",v:"-0.75",sig:"bear",sc:25},{n:"ATR(14)",v:"8,200",sig:"neutral",sc:50}],
+    consensus:[{y:"2025A",s:"23.7조",o:"1.3조",e:"+133.9%"},{y:"2026F",s:"28.5조",o:"2.8조",e:"+115%"},{y:"2027F",s:"34.0조",o:"4.1조",e:"+46%"},{y:"2028F",s:"40.0조",o:"5.5조",e:"+34%"}],
+    news:[{d:"2026-04-02",t:"테슬라 43억달러 LFP 공급계약 공식 확정.",imp:"pos"},{d:"2026-03-28",t:"2026 ESS 매출 157% 성장 전망.",imp:"pos"},{d:"2026-03-05",t:"4Q25 영업적자 1,220억. ESS 라인 전환 초기 비용.",imp:"neg"}]},
+  "068270":{name:"셀트리온",sector:"바이오/바이오시밀러",signal:"buy",badge:"분할매수",
+    verdict:"피봇 S1(180,000~185,000) 지지 확인. RSI 중립 이하 하방 경직. 짐펜트라·유플라이마 신제품 비중 54%. 2차 매집 구간.",
+    action:"분할매수",support:[180000,175000,170000],resist:[195000,210000,240000],
+    indicators:[{n:"일목(일봉)",v:"적극매도",sig:"bear",sc:30},{n:"일목(월봉)",v:"강력매수",sig:"bull",sc:78},{n:"RSI(14)",v:"42.0",sig:"neutral",sc:42},{n:"ATR(14)",v:"3,607",sig:"neutral",sc:50},{n:"피봇 S1",v:"180,000",sig:"bull",sc:65}],
+    consensus:[{y:"2025A",s:"4.16조",o:"1.17조",e:"+137.5%"},{y:"2026F",s:"5.05조",o:"1.74조",e:"+48.9%"},{y:"2027F",s:"5.80조",o:"2.15조",e:"+23.6%"},{y:"2028F",s:"6.50조",o:"2.50조",e:"+16.3%"}],
+    news:[{d:"2026-04-04",t:"1Q26 실적 우려 선반영. 피봇 S1 분할 매수 시점.",imp:"pos"},{d:"2026-03-10",t:"짐펜트라 미국 3대 PBM 등재 완료.",imp:"pos"},{d:"2026-02-15",t:"스테키마 2026년 유럽+북미 매출 3,500억 기대.",imp:"pos"}]},
+  "006400":{name:"삼성SDI",sector:"2차전지/ESS/전고체",signal:"buy",badge:"매수",
+    verdict:"CMF 0.15 최근 최고. 구름대 상방. 후행스팬 구름 돌파. 1분기 실적 개선 및 인터배터리 전고체 공개 모멘텀.",
+    action:"매수",support:[415000,400000,380000],resist:[480000,520000,660000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:78},{n:"CMF(20)",v:"0.15",sig:"bull",sc:72},{n:"RSI(14)",v:"55.0",sig:"bull",sc:55},{n:"ATR(14)",v:"12,500",sig:"neutral",sc:50},{n:"Kijun-sen",v:"415,000",sig:"bull",sc:68}],
+    consensus:[{y:"2025A",s:"13.27조",o:"-1.72조",e:"적자"},{y:"2026F",s:"15.51조",o:"-0.23조",e:"적자 축소"},{y:"2027F",s:"21.83조",o:"1.17조",e:"흑자전환"},{y:"2028F",s:"25.79조",o:"2.24조",e:"+91%"}],
+    news:[{d:"2026-03-12",t:"인터배터리 파우치형 전고체 배터리 첫 공개.",imp:"pos"},{d:"2026-02-25",t:"ESS 대규모 수주 + 구름대 안착. 보유 중.",imp:"pos"},{d:"2026-01-12",t:"CMF 양전환 하락 추세선 돌파. 매수 진입.",imp:"pos"}]},
+  "028260":{name:"삼성물산",sector:"건설/바이오/에너지",signal:"buy",badge:"매수",
+    verdict:"253,500원 피봇 바닥 신호 발생. RSI 상승 다이버전스 초기 형성. 272,000원 매물대 안착 시 비중 확대.",
+    action:"매수",support:[253566,240000,225000],resist:[272000,298357,315000],
+    indicators:[{n:"RSI(14)",v:"45.1",sig:"neutral",sc:45},{n:"MACD",v:"매수 반전",sig:"bull",sc:58},{n:"CMF(20)",v:"0.08",sig:"bull",sc:60},{n:"ATR(14)",v:"18,454",sig:"neutral",sc:50},{n:"Fib S1/S2",v:"253,500",sig:"bull",sc:65}],
+    consensus:[{y:"2025A",s:"",o:"3.3조",e:""},{y:"2026F",s:"",o:"3.6조",e:"+9%"},{y:"2027F",s:"",o:"4.0조",e:"+11%"},{y:"2028F",s:"",o:"4.4조",e:"+10%"}],
+    news:[{d:"2026-03-31",t:"피봇 바닥(253,500) 확인. 분할 매수 진입.",imp:"pos"},{d:"2026-01-29",t:"3년간 최대 9.4조 투자 계획. 자사주 전량 소각.",imp:"pos"},{d:"2025-06-20",t:"배당락 후 RSI 다이버전스. +30.7% 수익.",imp:"pos"}]},
+  "105560":{name:"KB금융지주",sector:"금융/은행",signal:"buy",badge:"매수",
+    verdict:"피봇 S1(145,166) 지지 시도. CMF 양수 유지. 2026H1 1.2조 자사주 소각 예정. 진입 적기.",
+    action:"매수",support:[145166,143800,138000],resist:[158000,165000,170000],
+    indicators:[{n:"CMF(20)",v:"0.12",sig:"bull",sc:68},{n:"RSI(14)",v:"53.9",sig:"neutral",sc:54},{n:"피봇 S1",v:"145,166",sig:"neutral",sc:50},{n:"ATR(14)",v:"2,621",sig:"neutral",sc:55},{n:"외국인수급",v:"상관 0.54",sig:"bull",sc:62}],
+    consensus:[{y:"2025F",s:"",o:"",e:"안정적"},{y:"2026F",s:"",o:"",e:"+15%"},{y:"2027F",s:"",o:"",e:"+12%"},{y:"2028F",s:"",o:"",e:"+10%"}],
+    news:[{d:"2026-04-03",t:"2026H1 1.2조 자사주 매입/소각. 강력한 수급 지지.",imp:"pos"},{d:"2026-03-12",t:"CMF 음전환으로 158,000원 매도. 14.5% 수익 실현.",imp:"pos"},{d:"2026-03-05",t:"CET1 13.5% 초과. 추가 주주환원 여력.",imp:"pos"}]},
+  "066570":{name:"LG전자",sector:"가전/전장/AI냉각",signal:"buy",badge:"매수",
+    verdict:"구조조정 비용 소멸. RSI 다이버전스 발생 후 기준선 안착. CMF 양수. 칠러(AI냉각) 2027 매출 1조 목표.",
+    action:"매수",support:[107300,103000,98000],resist:[115000,120000,130000],
+    indicators:[{n:"일목 구름대",v:"구름대 돌파",sig:"bull",sc:72},{n:"CMF(20)",v:"0.10",sig:"bull",sc:65},{n:"RSI(14)",v:"52.0",sig:"neutral",sc:52},{n:"ATR(14)",v:"4,500",sig:"neutral",sc:50},{n:"60일 MA",v:"우상향",sig:"bull",sc:68}],
+    consensus:[{y:"2025A",s:"89.2조",o:"2.48조",e:"-27.5%"},{y:"2026F",s:"94.0조",o:"3.53조",e:"+42.3%"},{y:"2027F",s:"94.7조",o:"3.87조",e:"+9.6%"},{y:"2028F",s:"98.5조",o:"4.11조",e:"+6.2%"}],
+    news:[{d:"2026-04-01",t:"기준선 지지 확인. 칠러 모멘텀 보유 유지.",imp:"pos"},{d:"2026-02-05",t:"구조조정 비용 소멸 + RSI 다이버전스 매수 진입.",imp:"pos"},{d:"2026-01-30",t:"2025 4Q 희망퇴직 비용 3,000억 일회성 처리 완료.",imp:"pos"}]},
+  "034020":{name:"두산에너빌리티",sector:"원전/에너지",signal:"watch",badge:"관망",
+    verdict:"20일선 아래 하향. MACD 매도 시그널. 90,600원 지지 확인 필수. 97,257원 거래량 돌파 시 재진입.",
+    action:"관망",support:[90600,75000],resist:[97257,99608,112100],
+    indicators:[{n:"이동평균",v:"역배열",sig:"bear",sc:32},{n:"MACD",v:"매도 시그널",sig:"bear",sc:28},{n:"RSI(14)",v:"50.5",sig:"neutral",sc:50},{n:"ADX(14)",v:"18",sig:"neutral",sc:40},{n:"거래량",v:"평균 이하",sig:"bear",sc:35}],
+    consensus:[{y:"2025E",s:"17.06조",o:"0.76조",e:"-54.1%"},{y:"2026F",s:"17.31조",o:"1.12조",e:"+489%"},{y:"2027F",s:"19.63조",o:"1.59조",e:"+67%"},{y:"2028F",s:"22.40조",o:"1.95조",e:"+25%"}],
+    news:[{d:"2026-04-02",t:"체코 원전 주기기 수주 확정 기대. 2026 EPS +489%.",imp:"pos"},{d:"2026-03-25",t:"112,100원 고점 피봇 탑 후 조정. 20일선 이탈.",imp:"neg"},{d:"2026-02-25",t:"2040년 수주잔고 48조 예상.",imp:"pos"}]},
+  "000270":{name:"기아",sector:"자동차/PBV/SDV",signal:"watch",badge:"매수추적",
+    verdict:"구름대 위이나 기준선·전환선 하향 이탈. CMF 중립. RSI 40 접근. 143,000~146,000 피보나치 지지 확인 후 재진입 검토.",
+    action:"매수추적",support:[146100,143000,135000],resist:[157600,165000,170000],
+    indicators:[{n:"일목 구름대",v:"구름 상단 지지",sig:"neutral",sc:52},{n:"CMF(20)",v:"-0.02",sig:"neutral",sc:45},{n:"RSI(14)",v:"41.5",sig:"neutral",sc:42},{n:"외국인수급",v:"3일연속 순매수",sig:"bull",sc:65},{n:"ATR(14)",v:"9,110",sig:"neutral",sc:50}],
+    consensus:[{y:"2025E",s:"114.1조",o:"10.2조",e:"-3.8%"},{y:"2026F",s:"118.5조",o:"11.4조",e:"+11.8%"},{y:"2027F",s:"125.4조",o:"12.6조",e:"+10.5%"},{y:"2028F",s:"132.8조",o:"13.5조",e:"+7.1%"}],
+    news:[{d:"2026-04-02",t:"현재 보유 중. 전환선 회복 전 보수적 관점 유지.",imp:"neu"},{d:"2026-02-26",t:"RSI 과열로 168,000원 분할 매도. +15.8% 실현.",imp:"pos"},{d:"2026-01-15",t:"글로벌 판매 목표 335만대 제시.",imp:"pos"}]},
+  "277810":{name:"레인보우로보틱스",sector:"로봇/AI",signal:"watch",badge:"매수추적",
+    verdict:"RSI 50~60 안정. CMF 소폭 양전환. 삼성전자 최대주주 이후 펀더멘털 강화. 기준선 지지 확인 후 분할 매수.",
+    action:"매수추적",support:[138500,132000,125000],resist:[155000,165000,180000],
+    indicators:[{n:"RSI(14)",v:"55.8",sig:"bull",sc:56},{n:"CMF(20)",v:"0.05",sig:"neutral",sc:52},{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:65},{n:"ATR(14)",v:"7,200",sig:"neutral",sc:50},{n:"삼성 시너지",v:"최대주주",sig:"bull",sc:80}],
+    consensus:[{y:"2025E",s:"360억",o:"50억",e:"흑전"},{y:"2026F",s:"1,020억",o:"290억",e:"+1,714%"},{y:"2027F",s:"2,500억",o:"750억",e:"+159%"},{y:"2028F",s:"4,200억",o:"1,400억",e:"+87%"}],
+    news:[{d:"2026-04-04",t:"CJ대한통운 AI 휴머노이드 물류로봇 공동개발 협력.",imp:"pos"},{d:"2026-03-20",t:"2025년 매출 76.4% 급증. 재고자산 141.8% 증가.",imp:"pos"},{d:"2026-02-22",t:"이재용 회장 휴머노이드 삼성의 미래 공식 선언.",imp:"pos"}]},
+  "329180":{name:"HD현대중공업",sector:"조선/방산/엔진",signal:"watch",badge:"관망",
+    verdict:"구름대 내부 진입. CMF -0.08 수급 부재. 450,000원 2중 바닥 + CMF 0 돌파 + 기준선(520K) 회복 확인 후 진입.",
+    action:"관망",support:[450000,440000,405000],resist:[520000,560000,652000],
+    indicators:[{n:"일목 구름대",v:"구름 내부",sig:"bear",sc:28},{n:"CMF(20)",v:"-0.08",sig:"bear",sc:25},{n:"RSI(14)",v:"43.5",sig:"neutral",sc:43},{n:"ATR(14)",v:"22,000",sig:"neutral",sc:40},{n:"Kijun-sen",v:"520,000",sig:"bear",sc:25}],
+    consensus:[{y:"2025E",s:"17.58조",o:"2.04조",e:"+188.9%"},{y:"2026F",s:"23.85조",o:"3.49조",e:"+71.4%"},{y:"2027F",s:"25.96조",o:"4.24조",e:"+21.5%"},{y:"2028F",s:"28.90조",o:"5.80조",e:"+36.7%"}],
+    news:[{d:"2026-04-04",t:"2026F 영업이익 3.49조(+71.4%). 조선 슈퍼사이클 이익 본격 반영.",imp:"pos"},{d:"2026-03-12",t:"545,000원 진입 후 구름대 이탈. ATR 손절 발동.",imp:"neg"},{d:"2026-01-05",t:"역사적 신고가 652,000원 달성.",imp:"pos"}]},
+  "010140":{name:"삼성중공업",sector:"조선/FLNG",signal:"buy",badge:"매수",
+    verdict:"FLNG 고마진 매출 본격화. BlackRock 5% 지분 공시. CMF 0.18 — 메이저 수급 강력 유입. 기준선 지지 후 진입.",
+    action:"매수",support:[27000,25200,22500],resist:[32500,35000,43000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:78},{n:"CMF(20)",v:"0.18",sig:"bull",sc:75},{n:"RSI(14)",v:"60.5",sig:"bull",sc:62},{n:"ATR(14)",v:"1,350",sig:"neutral",sc:55},{n:"Kijun-sen",v:"27,800",sig:"bull",sc:72}],
+    consensus:[{y:"2024A",s:"9.90조",o:"0.50조",e:"흑자전환"},{y:"2025A",s:"10.65조",o:"0.86조",e:"+71.7%"},{y:"2026F",s:"12.69조",o:"1.57조",e:"+82.0%"},{y:"2027F",s:"14.28조",o:"2.01조",e:"+28.0%"}],
+    news:[{d:"2026-04-02",t:"BlackRock 5% 이상 지분 보유 공시. 기준선 지지 후 반등 확인.",imp:"pos"},{d:"2026-03-20",t:"Cedar FLNG 프로젝트 매출 인식 시작.",imp:"pos"},{d:"2026-01-12",t:"22,500원→31,500원 +40.0% 익절.",imp:"pos"}]},
+  "042660":{name:"한화오션",sector:"조선/방산/MRO",signal:"buy",badge:"매수",
+    verdict:"한화그룹 편입 후 방산 리레이팅. 양운 위 안착 + CMF 0.12 수급 견조. 기준선 120,000원 눌림목이 추가 진입 타점.",
+    action:"매수",support:[115000,120000,108000],resist:[135000,142000,160000],
+    indicators:[{n:"일목 구름대",v:"양운 위",sig:"bull",sc:70},{n:"CMF(20)",v:"0.12",sig:"bull",sc:65},{n:"RSI(14)",v:"53.5",sig:"neutral",sc:55},{n:"ATR(14)",v:"7,200",sig:"neutral",sc:48},{n:"Kijun-sen",v:"120,000",sig:"bull",sc:68}],
+    consensus:[{y:"2025A",s:"12.78조",o:"1.17조",e:"+390.7%"},{y:"2026F",s:"13.82조",o:"1.71조",e:"+46.8%"},{y:"2027F",s:"15.53조",o:"2.15조",e:"+25.4%"},{y:"2028F",s:"16.68조",o:"2.76조",e:"+28.4%"}],
+    news:[{d:"2026-04-04",t:"2026F 영업이익 1.71조(+46.8%). 방산+상선 투트랙 성장.",imp:"pos"},{d:"2026-02-25",t:"구름대 상단 지지 확인. 125,000원 신규 진입.",imp:"pos"},{d:"2025-10-15",t:"미국 해군 MRO 모멘텀 강화. +23.5% 익절.",imp:"pos"}]},
+  "096770":{name:"SK이노베이션",sector:"에너지/정유/배터리",signal:"buy",badge:"매수",
+    verdict:"2026년 영업이익 +580% 전망 턴어라운드. 양운 상단 안착 + CMF 6개월 최고(0.18). 기준선 110,000원 눌림목이 핵심 추가 타점.",
+    action:"매수",support:[110000,102300,80300],resist:[125000,136700,142000],
+    indicators:[{n:"일목 구름대",v:"양운 상단",sig:"bull",sc:75},{n:"CMF(20)",v:"0.18",sig:"bull",sc:78},{n:"RSI(14)",v:"57.8",sig:"bull",sc:60},{n:"ATR(14)",v:"635",sig:"bull",sc:65},{n:"Kijun-sen",v:"110,000",sig:"bull",sc:72}],
+    consensus:[{y:"2025E",s:"80.66조",o:"0.41조",e:"-78.4%"},{y:"2026F",s:"75.80조",o:"2.06조",e:"+402%"},{y:"2027F",s:"81.23조",o:"3.87조",e:"+87.9%"},{y:"2028F",s:"74.62조",o:"6.67조",e:"+72.4%"}],
+    news:[{d:"2026-04-03",t:"현재가 118,200원. CMF 0.18 — 상승 추세 초기 단계.",imp:"pos"},{d:"2026-03-04",t:"26.3% 수익 익절. 이후 기준선 재지지 확인 후 재진입.",imp:"pos"},{d:"2026-01-28",t:"실적 턴어라운드 전망 + CMF 급증. 108,200원 매수.",imp:"pos"}]},
+  "196170":{name:"알테오젠",sector:"바이오/SC 플랫폼",signal:"watch",badge:"매수추적",
+    verdict:"200일선 대비 -35% 이탈. BB(20,2.5) 하단 근접. RSI(21) 40선 탈출 + Stoch Slow GC + 거래량 50% 증가 컨플루언스 조건 충족 시 진입.",
+    action:"매수추적",support:[360000,340000,310000],resist:[410000,437500,480000],
+    indicators:[{n:"RSI(21)",v:"38.5",sig:"bear",sc:38},{n:"Stoch Slow(20,12,12)",v:"침체권",sig:"bear",sc:30},{n:"BB(20,2.5)",v:"하단 근접",sig:"neutral",sc:42},{n:"ADX(20)",v:"18",sig:"neutral",sc:40},{n:"CMF(20)",v:"-0.03",sig:"neutral",sc:45}],
+    consensus:[{y:"2025A",s:"2,159억",o:"1,069억",e:"+321%"},{y:"2026F",s:"3,580억",o:"1,820억",e:"+70%"},{y:"2027F",s:"5,940억",o:"3,100억",e:"+70%"},{y:"2028F",s:"9,850억",o:"5,200억",e:"+68%"}],
+    news:[{d:"2026-04-04",t:"키트루다SC 미국·유럽 허가 완료. 2025 매출 2,159억.",imp:"pos"},{d:"2026-03-20",t:"현금 배당 200억 결의. 오버행 해소.",imp:"pos"},{d:"2026-02-01",t:"MSD 독점계약. 2028년까지 키트루다 50% SC전환 목표.",imp:"pos"}]},
+  "010120":{name:"LS ELECTRIC",sector:"전력기기/AI데이터센터",signal:"watch",badge:"재진입대기",
+    verdict:"최근 매매: 520K→680K +30.7% 익절 완료. 기준선 지지 확인 중. CMF>0 + RSI 불리쉬 다이버전스 + 기준선 반등 양봉 시 재진입 검토.",
+    action:"재진입대기",support:[560000,520000,480000],resist:[700000,750000,800000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:75},{n:"RSI(14)",v:"52.0",sig:"neutral",sc:52},{n:"CMF(20)",v:"0.05",sig:"bull",sc:60},{n:"ATR(14)",v:"18,500",sig:"neutral",sc:50},{n:"전환선",v:"620,000",sig:"neutral",sc:55}],
+    consensus:[{y:"2024A",s:"4.2조",o:"3,249억",e:"OPM 7.7%"},{y:"2025F",s:"4.9조",o:"4,269억",e:"+31%"},{y:"2026F",s:"6.1조",o:"6,897억",e:"+62%"},{y:"2027F",s:"7.2조",o:"9,110억",e:"+32%"}],
+    news:[{d:"2026-03-30",t:"기준선 반등 재진입 520K→680K +30.7% 전략 목표 달성 매도.",imp:"pos"},{d:"2026-02-15",t:"RSI 다이버전스+수주 공시 진입. +23.1% 성공.",imp:"pos"},{d:"2026-01-20",t:"북미 빅테크 배전 솔루션 수주 급증.",imp:"pos"}]},
+  "267260":{name:"HD현대일렉트릭",sector:"전력기기/변압기",signal:"buy",badge:"분할매수",
+    verdict:"고점 110만원 대비 20% 조정 구간. 120일선(78~80만) 강력 지지. CMF 0선 상향 돌파 + 전환선 돌파 시 1차 진입. RSI 45 이하 눌림목 진입 타점.",
+    action:"분할매수",support:[800000,780000,740000],resist:[920000,980000,1100000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:70},{n:"CMF(20)",v:"0.02",sig:"neutral",sc:52},{n:"RSI(14)",v:"41.0",sig:"neutral",sc:41},{n:"ATR(14)",v:"18,500",sig:"neutral",sc:50},{n:"OBV",v:"견조 유지",sig:"bull",sc:65}],
+    consensus:[{y:"2024A",s:"3.32조",o:"0.67조",e:"+112.2%"},{y:"2025잠",s:"4.08조",o:"1.00조",e:"+48.9%"},{y:"2026F",s:"4.77조",o:"1.28조",e:"+28.4%"},{y:"2027F",s:"5.65조",o:"1.59조",e:"+24.3%"}],
+    news:[{d:"2026-04-04",t:"고점 대비 20% 조정. 120일선 지지 확인 구간. 분할 매수 시작.",imp:"pos"},{d:"2026-03-15",t:"2026 매출 가이던스 4.35조. 환율 우호 시 상회 기대.",imp:"pos"},{d:"2026-02-10",t:"앨라배마 제2공장 기공. 765kV 변압기 북미 점유율 확대.",imp:"pos"}]},
+  "051910":{name:"LG화학",sector:"화학/소재/배터리",signal:"watch",badge:"매수추적",
+    verdict:"2024~2025년 캐즘 저점 통과 중. 2027 EPS 19,160원, 2028 EPS 40,542원 폭발 성장 전망. 구름대 하단 지지 + CMF 0선 돌파 + RSI 상승 다이버전스 발생 시 분할 진입.",
+    action:"매수추적",support:[270000,255000,235000],resist:[320000,340000,360000],
+    indicators:[{n:"일목 구름대",v:"구름대 하단",sig:"bear",sc:32},{n:"CMF(20)",v:"-0.02",sig:"neutral",sc:45},{n:"RSI(14)",v:"46.0",sig:"neutral",sc:46},{n:"Williams%R",v:"-62",sig:"neutral",sc:38},{n:"볼린저밴드",v:"스퀴즈",sig:"neutral",sc:50}],
+    consensus:[{y:"2025E",s:"45.9조",o:"1.18조",e:"+35%"},{y:"2026F",s:"48.7조",o:"1.55조",e:"+31.4%"},{y:"2027F",s:"56.1조",o:"4.20조",e:"+171%"},{y:"2028F",s:"65.2조",o:"7.06조",e:"+68.1%"}],
+    news:[{d:"2026-04-04",t:"구름대 하단 지지 테스트. CMF 0선 복귀 대기.",imp:"neu"},{d:"2026-03-01",t:"양극재 2026년 출하량 40% 증가 전망.",imp:"pos"},{d:"2026-01-15",t:"2027~2028 EPS 폭발 성장 시작. 선제 매집 기회.",imp:"pos"}]},
+  "087010":{name:"펩트론",sector:"바이오/GLP-1 지속형",signal:"watch",badge:"매수추적",
+    verdict:"스마트데포 기술 기반 일라이 릴리 MTA 기간 연장(최대 24개월) 심화 검증 중. 구름대 하단 지지+CMF(0.1) 돌파+RSI 상승 다이버전스 3중 충족 시 진입.",
+    action:"매수추적",support:[290000,270000,250000],resist:[320000,350000,400000],
+    indicators:[{n:"일목 구름대",v:"구름대 하단",sig:"bear",sc:35},{n:"CMF(20)",v:"0.02",sig:"neutral",sc:45},{n:"RSI(14)",v:"45.0",sig:"neutral",sc:45},{n:"ATR(14)",v:"18,000",sig:"neutral",sc:50},{n:"Williams%R",v:"-55",sig:"neutral",sc:40}],
+    consensus:[{y:"2024A",s:"영업손실",o:"-165억",e:"적자지속"},{y:"2025F",s:"루프원출하",o:"개선중",e:"흑전대기"},{y:"2026F",s:"오송신공장",o:"가동예정",e:"MTA결과"},{y:"2027F",s:"본계약시",o:"급성장",e:"재평가"}],
+    news:[{d:"2026-04-04",t:"일라이 릴리 MTA 기간 연장 진행. 구름대 하단 지지 확인.",imp:"neu"},{d:"2026-02-15",t:"200일선 지지+전환선 골든크로스 진입 → +12.7% 수익 실현.",imp:"pos"},{d:"2025-08-20",t:"카무루스 리스크 해소+기준선 반등 진입 → +120.9% 수익 실현.",imp:"pos"}]},
+  "214450":{name:"파마리서치",sector:"바이오/재생의학",signal:"watch",badge:"매수추적",
+    verdict:"리쥬란 글로벌 수출 가속+인적 분할 불확실성 해소 구간. 구름대+CMF(+)+RSI 다이버전스+MA20 돌파 4중 조건 충족 시 진입. 2026 EPS +32.5%, 2027 EPS +31.3% 고성장.",
+    action:"매수추적",support:[305000,295000,280000],resist:[320000,340000,366500],
+    indicators:[{n:"일목 구름대",v:"구름대 근접",sig:"neutral",sc:55},{n:"CMF(20)",v:"0.05",sig:"neutral",sc:55},{n:"RSI(14)",v:"45.0",sig:"neutral",sc:45},{n:"ATR(14)",v:"11,500",sig:"neutral",sc:50},{n:"MA20",v:"308,000",sig:"neutral",sc:50}],
+    consensus:[{y:"2024E",s:"3,501억",o:"1,261억",e:"EPS 8,608"},{y:"2025F",s:"5,363억",o:"2,144억",e:"EPS 14,600"},{y:"2026F",s:"6,855억",o:"2,668억",e:"+32.5%"},{y:"2027F",s:"8,326억",o:"3,420억",e:"+31.3%"}],
+    news:[{d:"2026-04-04",t:"리쥬란 유럽 22개국 점유율 확대. 기준선 부근 매수추적 지속.",imp:"pos"},{d:"2026-03-01",t:"인적 분할 우려 해소. 순자산 ROE 28.1% 우수.",imp:"pos"},{d:"2025-12-15",t:"RSI 다이버전스+기준선 반등 재진입.",imp:"pos"}]},
+  "214150":{name:"클래시스",sector:"미용의료기기/HIFU",signal:"buy",badge:"매수",
+    verdict:"슈링크+볼뉴머+쿼드세이 포트폴리오 다각화. 브라질 JL Health 연결 편입으로 2026 매출 4,763억 예상(+41.4%). 구름대 상방+CMF 0.05이상+기준선 지지 확인. PF 2.18, 승률 71.4%.",
+    action:"매수",support:[62800,58000,54000],resist:[70000,75000,83000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:70},{n:"CMF(20)",v:"0.08",sig:"bull",sc:65},{n:"RSI(14)",v:"55.0",sig:"bull",sc:55},{n:"ATR(14)",v:"4,400",sig:"neutral",sc:50},{n:"ADX(14)",v:"28",sig:"bull",sc:65}],
+    consensus:[{y:"2024E",s:"2,400억",o:"1,200억",e:"OPM 50%"},{y:"2025E",s:"3,368억",o:"1,852억",e:"OPM 55%"},{y:"2026F",s:"4,763억",o:"2,363억",e:"+25.2%"},{y:"2027F",s:"5,800억",o:"2,900억",e:"+24.2%"}],
+    news:[{d:"2026-04-04",t:"브라질 JL Health 연결 실적 반영 시작. 2026 매출 4,763억 전망.",imp:"pos"},{d:"2026-02-20",t:"미국 FDA 울트라포머 허가 신청 진행.",imp:"pos"},{d:"2025-11-15",t:"과거 평균 대비 -31% 저평가 구간. 기관 매집 재개 확인.",imp:"pos"}]},
+  "030530":{name:"원익IPS",sector:"반도체 전공정 장비",signal:"buy",badge:"매수",
+    verdict:"삼성전자 P4+SK하이닉스 M15X 대형 발주 수혜. 2026 영업이익 1,818억(+146.3%). MACD(10,22,7) 골든크로스+CMF 0.05이상+기준선 지지 확인 시 진입.",
+    action:"매수",support:[100000,95000,88000],resist:[120000,130000,140000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:72},{n:"CMF(20)",v:"0.05",sig:"bull",sc:60},{n:"RSI(14)",v:"55.0",sig:"bull",sc:55},{n:"MACD",v:"골든크로스",sig:"bull",sc:70},{n:"ATR(14)",v:"3,500",sig:"neutral",sc:50}],
+    consensus:[{y:"2025P",s:"9,098억",o:"738억",e:"OPM 8.1%"},{y:"2026E",s:"12,844억",o:"1,818억",e:"+146.3%"},{y:"2027E",s:"15,752억",o:"2,438억",e:"OPM 15.5%"},{y:"2028E",s:"18,000억+",o:"3,000억+",e:"성장지속"}],
+    news:[{d:"2026-04-04",t:"삼성 P4 신규 발주 확인. 구름대 상방 안착+MACD 골든크로스 진입.",imp:"pos"},{d:"2026-03-01",t:"SK하이닉스 M15X 장비 발주 개시. 2026 파운드리향 1,391억 급증.",imp:"pos"},{d:"2026-01-20",t:"북미 파운드리 고객사 CVD 장비 평가 완료.",imp:"pos"}]},
+  "095340":{name:"ISC",sector:"반도체 테스트 소켓",signal:"buy",badge:"매수",
+    verdict:"AI GPU 양산용 실리콘 러버 소켓 독점적 성장. 2026 EPS 4,082원(+47.3%). CMF 0.15이상+구름대+5일선≥20일선 골든크로스 시 진입. PF 2.20, 승률 70%+.",
+    action:"매수",support:[85000,80000,75000],resist:[100000,110000,120000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:68},{n:"CMF(20)",v:"0.15",sig:"bull",sc:75},{n:"RSI(14)",v:"50.0",sig:"bull",sc:52},{n:"ATR(14)",v:"5,000",sig:"neutral",sc:50},{n:"OPM",v:"32.9%",sig:"bull",sc:70}],
+    consensus:[{y:"2024A",s:"1,740억",o:"450억",e:"OPM 25.7%"},{y:"2025E",s:"2,200억",o:"600억",e:"EPS 2,772"},{y:"2026F",s:"2,870억",o:"940억",e:"+47.3%"},{y:"2027F",s:"3,320억",o:"1,160억",e:"OPM 35%"}],
+    news:[{d:"2026-04-04",t:"AI GPU 세대교체 수혜. CMF 0.15 돌파+구름대 안착 진입.",imp:"pos"},{d:"2026-02-15",t:"대만 윈웨이 점유율 침투 가속. AI 관련 매출 2025년 1,500억.",imp:"pos"},{d:"2025-10-20",t:"2nm 공정 전환 수혜. 테스트 난이도 상승 → ASP 상향.",imp:"pos"}]},
+  "058470":{name:"리노공업",sector:"반도체 테스트 소켓/핀",signal:"buy",badge:"매수",
+    verdict:"R&D 소켓 시장 글로벌 70% 점유율. 2026 영업이익률 46.5% 초고마진. 구름대+CMF(0.1이상)+기준선 지지 반등+RSI 50 이상 우상향 시 진입. 승률 72.5%, PF 2.24.",
+    action:"매수",support:[105000,100000,92000],resist:[120000,128200,140000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:75},{n:"CMF(20)",v:"0.10",sig:"bull",sc:70},{n:"RSI(14)",v:"55.0",sig:"bull",sc:55},{n:"ATR(14)",v:"3,200",sig:"neutral",sc:50},{n:"ADX(14)",v:"28",sig:"bull",sc:65}],
+    consensus:[{y:"2024A",s:"2,780억",o:"1,240억",e:"OPM 44.6%"},{y:"2025E",s:"3,260억",o:"1,515억",e:"EPS 8,655"},{y:"2026E",s:"3,610억",o:"1,680억",e:"+11.4%"},{y:"2027E",s:"4,010억",o:"1,790억",e:"+5.4%"}],
+    news:[{d:"2026-04-04",t:"부산 신공장(11월) 이전 후 생산 CAPA 2배 확대. 기준선 지지 매수.",imp:"pos"},{d:"2026-02-10",t:"온디바이스 AI 확산→테스트 난이도 상승→ASP 개선 가속.",imp:"pos"},{d:"2025-11-20",t:"2025 AI향 R&D 소켓 비중 60% 돌파. 고마진 구조 공고화.",imp:"pos"}]},
+  "145020":{name:"휴젤",sector:"보툴리눔 톡신/필러",signal:"watch",badge:"매수추적",
+    verdict:"기준선(256K) 하단 조정 중. CMF 0 상향+구름대 복귀+OBV 고점 돌파 시 진입. 2026 EPS +14.7%, 2027 EPS +33.5%. 미국 직판 체제 전환 중장기 리레이팅 촉매.",
+    action:"매수추적",support:[242000,230000,215000],resist:[256000,272000,300000],
+    indicators:[{n:"일목 구름대",v:"구름대 하단",sig:"bear",sc:40},{n:"CMF(20)",v:"-0.02",sig:"bear",sc:42},{n:"RSI(14)",v:"42.0",sig:"neutral",sc:42},{n:"ATR(14)",v:"7,100",sig:"neutral",sc:50},{n:"Williams%R",v:"-65",sig:"neutral",sc:38}],
+    consensus:[{y:"2024A",s:"3,748억",o:"1,577억",e:"OPM 42.1%"},{y:"2025E",s:"4,411억",o:"2,106억",e:"EPS 14,029"},{y:"2026F",s:"5,010억",o:"2,435억",e:"+14.7%"},{y:"2027F",s:"6,400억",o:"미정",e:"+33.5%"}],
+    news:[{d:"2026-04-04",t:"기준선(256K) 하단 조정. CMF 0선 복귀 대기.",imp:"neu"},{d:"2026-03-10",t:"미국 직판 조직 2026 본격 가동. 중장기 OPM 개선 촉매.",imp:"pos"},{d:"2026-01-20",t:"중국·유럽 보툴리눔 점유율 확대. 2027 매출 6,400억 전망.",imp:"pos"}]},
+  "263750":{name:"펄어비스",sector:"게임/붉은사막/도깨비",signal:"watch",badge:"매수추적",
+    verdict:"2026-04-01 RSI 하락 다이버전스 발생 → 72,000원 전량 매도 완료(+43.4%). 60,000원 지지+CMF 재상승+기준선 반등 시 재진입. 2026 EPS 흑자전환(5,980원).",
+    action:"매수추적",support:[60000,55000,50200],resist:[70000,77400,90000],
+    indicators:[{n:"일목 구름대",v:"구름대 상단 지지",sig:"neutral",sc:60},{n:"CMF(20)",v:"+0.12",sig:"bull",sc:62},{n:"RSI(14)",v:"58.0",sig:"neutral",sc:58},{n:"ATR(14)",v:"4,200",sig:"neutral",sc:50},{n:"볼린저밴드",v:"중심선 이탈",sig:"bear",sc:40}],
+    consensus:[{y:"2025E",s:"3,805억",o:"-150억",e:"적자지속"},{y:"2026F",s:"9,674억",o:"4,536억",e:"흑자전환"},{y:"2027F",s:"5,400억",o:"1,040억",e:"-76.2%"},{y:"2028F",s:"1.25조",o:"5,800억",e:"+437.9%"}],
+    news:[{d:"2026-04-01",t:"RSI 하락 다이버전스. 신고가 77,400원 후 72,000원 전량 매도. +43.4%.",imp:"pos"},{d:"2026-03-25",t:"CMF V자 반등+판매량 300만장 돌파. +43.4% 청산.",imp:"pos"},{d:"2026-03-19",t:"메타크리틱 78점 발표 하한가(-29%). Pre-event 매도로 완벽 회피.",imp:"neg"}]},
+  "278470":{name:"에이피알",sector:"K-뷰티/화장품/DTC",signal:"watch",badge:"매수추적",
+    verdict:"일목 구름대 상방 안착. CMF 0.07 양전환 유지. 미국 DTC 매출 분기 +80% YoY. RSI 55 중립 구간. 98,000원 기준선 지지 확인 후 분할 진입 검토.",
+    action:"매수추적",support:[98000,92000,85000],resist:[112000,120000,135000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:68},{n:"CMF(20)",v:"0.07",sig:"bull",sc:62},{n:"RSI(14)",v:"54.8",sig:"neutral",sc:55},{n:"ATR(14)",v:"4,512",sig:"neutral",sc:52},{n:"Kijun-sen",v:"101,200",sig:"neutral",sc:48}],
+    consensus:[{y:"2024A",s:"7,654억",o:"1,312억",e:"+38.2%"},{y:"2025F",s:"1.08조",o:"1,960억",e:"+49.4%"},{y:"2026F",s:"1.54조",o:"2,800억",e:"+42.9%"},{y:"2027F",s:"2.05조",o:"3,700억",e:"+32.1%"}],
+    news:[{d:"2026-04-01",t:"미국 아마존·Ulta Beauty 입점 확대. 1Q26 해외 매출 비중 61% 돌파.",imp:"pos"},{d:"2026-03-15",t:"일본 오프라인 점포 5개 → 32개 확장 계획 발표.",imp:"pos"},{d:"2026-02-20",t:"4Q25 영업이익 480억 발표. 전년比 +62%. 시장 기대치 12% 상회.",imp:"pos"}]},
+  "000720":{name:"현대건설",sector:"건설/원전/NEOM",signal:"watch",badge:"관망",
+    verdict:"기준선(37,800) 하방 조정. CMF 소폭 음전환. ADX 20 추세 약. 체코·폴란드 원전 계약 모멘텀. 35,000원 지지 + CMF 양전환 + ADX>25 동시 확인 시 진입.",
+    action:"관망",support:[35000,33000,30000],resist:[38500,42000,48000],
+    indicators:[{n:"이동평균",v:"역배열",sig:"bear",sc:35},{n:"CMF(20)",v:"-0.03",sig:"bear",sc:38},{n:"RSI(14)",v:"47.2",sig:"neutral",sc:47},{n:"ADX(14)",v:"20",sig:"neutral",sc:40},{n:"일목 구름대",v:"구름 하단 접근",sig:"bear",sc:36}],
+    consensus:[{y:"2024A",s:"33.8조",o:"6,820억",e:"+3.2%"},{y:"2025F",s:"35.2조",o:"7,500억",e:"+9.9%"},{y:"2026F",s:"38.1조",o:"9,600억",e:"+28.0%"},{y:"2027F",s:"41.5조",o:"1.18조",e:"+22.9%"}],
+    news:[{d:"2026-04-02",t:"폴란드 APR1400 원전 2기 우선협상대상자 선정. 30조 잠재 수주.",imp:"pos"},{d:"2026-03-20",t:"체코 두코바니 원전 EPC 계약 최종 서명.",imp:"pos"},{d:"2026-02-15",t:"NEOM 더라인 착공 재개. 현대건설 지분 참여 확인.",imp:"pos"}]},
+  "259960":{name:"크래프톤",sector:"게임/PUBG/inZOI",signal:"buy",badge:"매수",
+    verdict:"구름대 상방 정배열. CMF 0.10 기관 수급 확인. inZOI DAU 200만 돌파. 기준선(284,500) 지지 안정적. 목표가 340,000~380,000원.",
+    action:"매수",support:[284500,268000,250000],resist:[315000,340000,380000],
+    indicators:[{n:"일목 구름대",v:"구름대 상방",sig:"bull",sc:75},{n:"CMF(20)",v:"0.10",sig:"bull",sc:70},{n:"RSI(14)",v:"57.3",sig:"bull",sc:57},{n:"ATR(14)",v:"11,200",sig:"neutral",sc:50},{n:"Kijun-sen",v:"284,500",sig:"bull",sc:72}],
+    consensus:[{y:"2024A",s:"2.98조",o:"9,190억",e:"+52.3%"},{y:"2025F",s:"3.62조",o:"1.12조",e:"+21.9%"},{y:"2026F",s:"4.41조",o:"1.38조",e:"+23.2%"},{y:"2027F",s:"5.05조",o:"1.61조",e:"+16.7%"}],
+    news:[{d:"2026-04-01",t:"inZOI 글로벌 DAU 200만 돌파. 유료 DLC 출시 예정.",imp:"pos"},{d:"2026-03-20",t:"BGMI 인도 시즌 신기록. MAU 1.2억 달성.",imp:"pos"},{d:"2026-02-10",t:"Subnautica 2 PC-콘솔 크로스플레이 글로벌 출시.",imp:"pos"}]},
+  "035420":{name:"NAVER",sector:"인터넷/AI/검색/커머스",signal:"watch",badge:"매수추적",
+    verdict:"기준선(192,500) 소폭 상회. CMF 양전환 미약. HyperCLOVA X B2B 수주 증가. 188,000원 피봇 S1 지지 + CMF>0.05 + RSI 상승 확인 시 진입.",
+    action:"매수추적",support:[188000,178000,165000],resist:[205000,220000,240000],
+    indicators:[{n:"일목 구름대",v:"구름대 상단 근접",sig:"neutral",sc:55},{n:"CMF(20)",v:"0.04",sig:"neutral",sc:52},{n:"RSI(14)",v:"50.1",sig:"neutral",sc:50},{n:"ATR(14)",v:"5,480",sig:"neutral",sc:50},{n:"Kijun-sen",v:"192,500",sig:"neutral",sc:50}],
+    consensus:[{y:"2024A",s:"10.7조",o:"1.39조",e:"+9.6%"},{y:"2025F",s:"11.8조",o:"1.65조",e:"+18.7%"},{y:"2026F",s:"13.2조",o:"2.05조",e:"+24.2%"},{y:"2027F",s:"14.8조",o:"2.58조",e:"+25.9%"}],
+    news:[{d:"2026-04-01",t:"AI 검색 Cue: DAU 800만 돌파. 광고 수익 연동 개시.",imp:"pos"},{d:"2026-03-15",t:"LINE 야후 통합 플랫폼 일본 출시. 2027 매출 시너지 7,500억.",imp:"pos"},{d:"2026-01-30",t:"Webtoon 북미 구독자 1,200만 돌파.",imp:"pos"}]},
+  "035720":{name:"카카오",sector:"플랫폼/카카오톡/콘텐츠",signal:"watch",badge:"관망",
+    verdict:"기준선(44,500) 하방 조정. CMF 음전환. ADX 18 추세 약. SM엔터 관련 법적 리스크 해소 진행 중. 41,000원 지지 + CMF 양전환 + ADX>22 동시 확인 시 분할 진입.",
+    action:"관망",support:[41000,38000,35000],resist:[46500,50000,55000],
+    indicators:[{n:"이동평균",v:"역배열",sig:"bear",sc:32},{n:"CMF(20)",v:"-0.02",sig:"bear",sc:40},{n:"RSI(14)",v:"45.6",sig:"neutral",sc:46},{n:"ADX(14)",v:"18",sig:"neutral",sc:38},{n:"일목 구름대",v:"구름 내부",sig:"bear",sc:35}],
+    consensus:[{y:"2024A",s:"7.67조",o:"3,800억",e:"-12.4%"},{y:"2025F",s:"7.92조",o:"4,500억",e:"+18.4%"},{y:"2026F",s:"8.54조",o:"6,075억",e:"+35.0%"},{y:"2027F",s:"9.28조",o:"7,714억",e:"+27.0%"}],
+    news:[{d:"2026-04-01",t:"카카오페이 흑자 전환 공식 확인. 분기 영업이익 218억.",imp:"pos"},{d:"2026-03-10",t:"SM엔터 관련 주요 형사재판 1심 종결. 법적 불확실성 해소.",imp:"pos"},{d:"2026-02-20",t:"카카오모빌리티 구조조정 완료. 2026 흑자 전환 가이던스.",imp:"pos"}]}
+};
+
+/* ════════════════════════════════════════════════
+   설정
+════════════════════════════════════════════════ */
+const API = ""; // Vercel: 같은 도메인 사용 (상대 경로)
+let currentTicker  = "005930";
+let currentName    = "삼성전자";
+let currentPeriod  = "1W";
+let priceChartInst = null;
+let volChartInst   = null;
+let portChartInst  = null;
+let histChartInst  = null;
+let newsPaused     = false;
+let prevSignal     = null;     // 이전 신호 추적 (알림용)
+let alertHistory   = [];       // 알림 내역
+let notifCount     = 0;        // 읽지 않은 알림 수
+
+/* ════════════════════════════════════════════════
+   유틸
+════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const fmt = n => typeof n === "number" ? n.toLocaleString("ko-KR") : n;
+
+function showErr(msg) {
+  const t = $("errToast");
+  t.textContent = "⚠ " + msg;
+  t.style.display = "block";
+  setTimeout(() => t.style.display = "none", 4000);
+}
+
+function setConn(state, label) {
+  const dot = $("connDot");
+  dot.className = "conn-dot " + state;
+  $("connLabel").textContent = label;
+  const now = new Date();
+  $("connTime").textContent = `${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}:${now.getSeconds().toString().padStart(2,"0")} 갱신`;
+}
+
+function nowTimeStr() {
+  const n = new Date();
+  return `${n.getHours().toString().padStart(2,"0")}:${n.getMinutes().toString().padStart(2,"0")}`;
+}
+
+/* ════════════════════════════════════════════════
+   브라우저 알림 권한 요청
+════════════════════════════════════════════════ */
+function requestNotifPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+/* ════════════════════════════════════════════════
+   신호 알림 토스트 + 브라우저 알림
+════════════════════════════════════════════════ */
+let toastTimer = null;
+
+function triggerSignalAlert(ticker, name, signal, desc) {
+  const cfg = {
+    buy:  { icon:"📈", badge:"매수 신호 발생!", badgeClass:"buy-txt",  toastClass:"toast-buy",  color:"#059669" },
+    sell: { icon:"📉", badge:"매도 신호 발생!", badgeClass:"sell-txt", toastClass:"toast-sell", color:"#dc2626" },
+    hold: { icon:"⏸",  badge:"관망 전환",       badgeClass:"hold-txt", toastClass:"toast-hold", color:"#d97706" },
+  }[signal];
+  if (!cfg) return;
+
+  const timeStr = nowTimeStr();
+
+  // ── 토스트 표시 ──
+  const toast = $("signalToast");
+  toast.className = `signal-toast ${cfg.toastClass}`;
+  $("stIcon").textContent  = cfg.icon;
+  $("stBadge").textContent = cfg.badge;
+  $("stBadge").className   = `st-badge ${cfg.badgeClass}`;
+  $("stTitle").textContent = `${name} · ${ticker}`;
+  $("stSub").textContent   = desc;
+  $("stTime").textContent  = timeStr;
+  toast.classList.add("show");
+
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(closeSignalToast, 7000);
+
+  // ── 알림 내역에 추가 ──
+  alertHistory.unshift({ icon:cfg.icon, title:`${cfg.badge} - ${name}`, sub:desc, time:timeStr });
+  notifCount++;
+  renderNotifPanel();
+
+  // ── 브라우저 푸시 알림 ──
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(`${cfg.icon} ${cfg.badge}`, {
+      body: `${name} (${ticker})\n${desc}`,
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>📊</text></svg>",
+      tag:  "stock-signal",
+    });
+  }
+}
+
+function closeSignalToast() {
+  $("signalToast").classList.remove("show");
+}
+
+/* ════════════════════════════════════════════════
+   알림 패널
+════════════════════════════════════════════════ */
+function toggleNotifPanel() {
+  const panel = $("notifPanel");
+  panel.classList.toggle("open");
+  if (panel.classList.contains("open")) {
+    notifCount = 0;
+    $("notifBadge").classList.remove("show");
+  }
+}
+
+function renderNotifPanel() {
+  const badge = $("notifBadge");
+  badge.textContent = notifCount;
+  if (notifCount > 0) badge.classList.add("show");
+
+  const list = $("notifList");
+  if (!alertHistory.length) {
+    list.innerHTML = '<div class="np-empty">아직 신호 알림이 없습니다.</div>';
+    return;
+  }
+  list.innerHTML = alertHistory.slice(0, 20).map(a => `
+    <div class="np-item">
+      <div class="npi-icon">${a.icon}</div>
+      <div class="npi-text">
+        <div class="npi-title">${a.title}</div>
+        <div class="npi-sub">${a.sub}</div>
+        <div class="npi-time">${a.time}</div>
+      </div>
+    </div>`).join("");
+}
+
+function clearAlerts() {
+  alertHistory = [];
+  notifCount   = 0;
+  $("notifBadge").classList.remove("show");
+  renderNotifPanel();
+}
+
+// 패널 바깥 클릭 시 닫기
+document.addEventListener("click", e => {
+  const wrap = document.querySelector(".notif-wrap");
+  if (wrap && !wrap.contains(e.target)) {
+    $("notifPanel").classList.remove("open");
+  }
+});
+
+/* ════════════════════════════════════════════════
+   지표 계산 유틸
+════════════════════════════════════════════════ */
+function calcRSI(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gains = 0, losses = 0;
+  for (let i = closes.length - period; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    if (diff > 0) gains += diff;
+    else losses -= diff;
+  }
+  const avgGain = gains / period, avgLoss = losses / period;
+  return avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
+}
+
+function calcBB(closes, period = 20, mult = 2) {
+  if (closes.length < period) return null;
+  const slice = closes.slice(-period);
+  const mean  = slice.reduce((a, b) => a + b, 0) / period;
+  const variance = slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+  const std   = Math.sqrt(variance);
+  return { upper: mean + mult * std, mid: mean, lower: mean - mult * std };
+}
+
+function calcMACD(closes, fast = 12, slow = 26, signal = 9) {
+  if (closes.length < slow + signal) return null;
+  function ema(data, n) {
+    const k = 2 / (n + 1);
+    let e = data.slice(0, n).reduce((a, b) => a + b, 0) / n;
+    for (let i = n; i < data.length; i++) e = data[i] * k + e * (1 - k);
+    return e;
+  }
+  const macdLine = ema(closes, fast) - ema(closes, slow);
+  // 히스토그램 간이 계산
+  const signalLine = macdLine * (2 / (signal + 1)); // 근사값
+  return { macd: macdLine, signal: signalLine, hist: macdLine - signalLine };
+}
+
+function calcBBLines(closes, period = 20, mult = 2) {
+  // 전체 배열에 대해 BB 상/하단 배열 반환
+  const upper = [], lower = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) { upper.push(null); lower.push(null); continue; }
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean  = slice.reduce((a, b) => a + b, 0) / period;
+    const std   = Math.sqrt(slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period);
+    upper.push(round0(mean + mult * std));
+    lower.push(round0(mean - mult * std));
+  }
+  return { upper, lower };
+}
+
+const round0 = v => Math.round(v);
+
+/* ════════════════════════════════════════════════
+   1. 현재가 + 지표 로드
+════════════════════════════════════════════════ */
+async function loadPrice(ticker) {
+  try {
+    const res  = await fetch(`${API}/api/price?ticker=${ticker}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const sign = parseInt(data.sign);
+    const isUp = sign <= 2;
+
+    $("heroPrice").textContent = `₩${fmt(data.price)}`;
+    $("heroChangeAbs").textContent = `${isUp ? "▲" : "▼"} ${fmt(Math.abs(data.change))}`;
+    $("heroChangePct").textContent = `${data.change_pct > 0 ? "+" : ""}${data.change_pct}%`;
+    $("heroChangePct").className = `chip ${isUp ? "chip-up" : "chip-dn"}`;
+
+    // 거래량
+    const vol = data.volume;
+    $("volVal").textContent = `${(vol/10000).toFixed(0)}만주`;
+    $("volBar").style.width = `${Math.min(vol / 300000000 * 100, 100)}%`;
+    $("volSub").textContent = "실시간";
+
+    // 주요 지표
+    const cap = parseFloat(data.market_cap);
+    $("sMktCap").textContent = cap > 10000 ? `${(cap/10000).toFixed(1)}조` : `${cap}억`;
+    $("sPer").textContent    = data.per ? `${data.per}x` : "--";
+    $("sPbr").textContent    = data.pbr ? `${data.pbr}x` : "--";
+    $("sW52H").textContent   = `${fmt(data.w52_high)}`;
+    $("sW52L").textContent   = `${fmt(data.w52_low)}`;
+
+    return data;
+  } catch(e) {
+    showErr(`현재가 조회 실패: ${e.message}`);
+    return null;
+  }
+}
+
+/* ════════════════════════════════════════════════
+   2. 차트 로드 (yfinance) — BB + MACD + 신호 알림
+════════════════════════════════════════════════ */
+async function loadChart(ticker, period) {
+  try {
+    const res  = await fetch(`${API}/api/chart?ticker=${ticker}&period=${period}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const closes = data.close;
+
+    // ── 볼린저밴드 계산 ──
+    const bbLines = calcBBLines(closes, 20, 2);
+
+    // ── 가격 차트 ──
+    const ctx  = $("priceChart").getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, 185);
+    grad.addColorStop(0, "rgba(124,58,237,0.18)");
+    grad.addColorStop(1, "rgba(124,58,237,0)");
+
+    if (priceChartInst) priceChartInst.destroy();
+    priceChartInst = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: data.labels,
+        datasets: [
+          { label:"종가", data:closes, borderColor:"#7c3aed", backgroundColor:grad, borderWidth:2.5, pointRadius:0, pointHoverRadius:5, fill:true, tension:0.3, order:1 },
+          { label:"MA5",     data:data.ma5,   borderColor:"#f59e0b", borderWidth:1.5, borderDash:[5,3], pointRadius:0, fill:false, tension:0.3, order:2 },
+          { label:"MA20",    data:data.ma20,  borderColor:"#10b981", borderWidth:1.5, borderDash:[5,3], pointRadius:0, fill:false, tension:0.3, order:2 },
+          { label:"BB상단",  data:bbLines.upper, borderColor:"rgba(148,163,184,.5)", borderWidth:1, borderDash:[3,4], pointRadius:0, fill:false, tension:0.3, order:3 },
+          { label:"BB하단",  data:bbLines.lower, borderColor:"rgba(148,163,184,.5)", borderWidth:1, borderDash:[3,4], pointRadius:0, fill:"+1", backgroundColor:"rgba(148,163,184,0.04)", tension:0.3, order:3 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{intersect:false, mode:"index"},
+        plugins:{
+          legend:{display:false},
+          tooltip:{backgroundColor:"rgba(255,255,255,.97)",titleColor:"#475569",bodyColor:"#1e1b4b",borderColor:"#e2e8f0",borderWidth:1,
+            callbacks:{
+              label: c => c.dataset.label.startsWith("BB") ? null : `${c.dataset.label}: ₩${fmt(c.raw||0)}`,
+              filter: item => !item.dataset.label.startsWith("BB") || item.dataIndex === item.dataset.data.length - 1,
+            }
+          }
+        },
+        scales:{
+          x:{grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#94a3b8",font:{size:10}}},
+          y:{grid:{color:"rgba(0,0,0,0.04)"},ticks:{color:"#94a3b8",font:{size:10},callback:v=>"₩"+(v/1000).toFixed(0)+"k"},position:"right"}
+        }
+      }
+    });
+
+    // ── 거래량 차트 ──
+    const vcx = $("volChart").getContext("2d");
+    if (volChartInst) volChartInst.destroy();
+    volChartInst = new Chart(vcx, {
+      type:"bar",
+      data:{
+        labels:data.labels,
+        datasets:[{
+          data:data.volume,
+          backgroundColor:closes.map((c,i)=>c>=(closes[i-1]||c)?"rgba(124,58,237,0.55)":"rgba(244,63,94,0.45)"),
+          borderRadius:4, borderWidth:0
+        }]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{display:false},y:{display:false}}}
+    });
+
+    // ── 이동평균 패널 ──
+    const last = closes[closes.length - 1];
+    function getMA(arr, name, clr) {
+      const val = arr[arr.length - 1];
+      if (!val) return "";
+      const up = last >= val;
+      const pct = Math.min(Math.max((val / (last * 1.2)) * 100, 20), 95);
+      return `<div class="ma-row">
+        <span class="ma-pd">${name}</span>
+        <div class="ma-bar-w"><div class="ma-bar-f" style="width:${pct}%;background:${clr};"></div></div>
+        <span class="ma-v ${up?"mup":"mdn"}">₩${fmt(round0(val))} ${up?"↑":"↓"}</span>
+      </div>`;
+    }
+    $("maList").innerHTML =
+      getMA(data.ma5,  "MA 5",  "#7c3aed") +
+      getMA(data.ma20, "MA 20", "#a855f7") +
+      (data.ma60 ? getMA(data.ma60, "MA 60", "#f97316") : "");
+
+    // ── RSI 계산 ──
+    const rsi = calcRSI(closes, 14);
+    if (rsi !== null) {
+      const rsiR = Math.round(rsi * 10) / 10;
+      $("rsiVal").textContent      = rsiR;
+      $("rsiGaugeNum").textContent = rsiR;
+      $("rsiBar").style.width      = `${rsiR}%`;
+      const rsiColor = rsi < 30 ? "#10b981" : rsi > 70 ? "#f43f5e" : "#f59e0b";
+      $("rsiVal").style.color = rsiColor;
+      $("rsiGaugeNum").style.color = rsiColor;
+      $("rsiBar").style.background = rsiColor;
+      $("rsiPtr").style.borderColor = rsiColor;
+      const rsiSub = rsi < 30 ? "과매도 구간 📉" : rsi > 70 ? "과매수 구간 📈" : "중립 구간";
+      $("rsiSub").textContent      = rsiSub;
+      $("rsiGaugeSub").textContent = rsiSub;
+      $("rsiPtr").style.left       = `${rsiR}%`;
+
+      // ── MACD 계산 ──
+      const macd = calcMACD(closes);
+      if (macd) {
+        const macdRounded = macd.macd.toFixed(1);
+        $("macdVal").textContent = macdRounded;
+        $("macdSub").textContent = macd.hist > 0 ? "MACD > Signal ↑" : "MACD < Signal ↓";
+        $("macdBar").style.width = `${Math.min(Math.abs(macd.hist) / 500 * 100, 100)}%`;
+        $("macdBar").style.background = macd.hist > 0 ? "#10b981" : "#f43f5e";
+        $("macdVal").style.color = macd.hist > 0 ? "#10b981" : "#f43f5e";
+      }
+
+      // ── 볼린저밴드 %B ──
+      const bbCur = calcBB(closes, 20, 2);
+      if (bbCur) {
+        const pctB = ((last - bbCur.lower) / (bbCur.upper - bbCur.lower) * 100).toFixed(0);
+        $("bbVal").textContent = `${pctB}%`;
+        $("bbSub").textContent = pctB > 80 ? "상단 근접 (과매수)" : pctB < 20 ? "하단 근접 (과매도)" : "밴드 중간";
+        $("bbBar").style.width = `${Math.min(Math.max(pctB, 0), 100)}%`;
+        const bbColor = pctB > 80 ? "#f43f5e" : pctB < 20 ? "#10b981" : "#7c3aed";
+        $("bbBar").style.background = bbColor;
+        $("bbVal").style.color = bbColor;
+
+        // ── 통합 신호 분석 (RSI + MA + BB + MACD) ──
+        const maFast = data.ma5[data.ma5.length - 1];
+        const maSlow = data.ma20[data.ma20.length - 1];
+
+        let score = 0;
+        const reasons = [];
+        // MA
+        if (maFast && maSlow) {
+          if (maFast > maSlow) { score += 2; reasons.push("MA 골든크로스"); }
+          else                  { score -= 2; reasons.push("MA 데드크로스"); }
+        }
+        // RSI
+        if (rsi < 30) { score += 2; reasons.push("RSI 과매도"); }
+        else if (rsi > 70) { score -= 2; reasons.push("RSI 과매수"); }
+        // BB %B
+        if (pctB < 15) { score += 1; reasons.push("BB 하단"); }
+        else if (pctB > 85) { score -= 1; reasons.push("BB 상단"); }
+        // MACD
+        if (macd && macd.hist > 0) { score += 1; reasons.push("MACD 상승"); }
+        else if (macd && macd.hist < 0) { score -= 1; reasons.push("MACD 하락"); }
+
+        let combined;
+        if (score >= 2)       combined = "buy";
+        else if (score <= -2) combined = "sell";
+        else                  combined = "hold";
+
+        const strength = Math.min(Math.round(Math.abs(score) / 6 * 100), 95);
+        const reasonStr = reasons.slice(0, 2).join(" · ");
+
+        const sigConf = {
+          buy:  { icon:"📈", name:"매수 신호", desc: reasonStr || "MA + RSI + BB 매수 조건", style:"buy",  nameColor:"#15803d", descColor:"#166534" },
+          sell: { icon:"📉", name:"매도 신호", desc: reasonStr || "MA + RSI + BB 매도 조건", style:"sell", nameColor:"#b91c1c", descColor:"#991b1b" },
+          hold: { icon:"⏸",  name:"관망 유지", desc: reasonStr || "명확한 방향성 없음",      style:"hold", nameColor:"#a16207", descColor:"#854d0e" },
+        }[combined];
+
+        $("sigBox").className    = `sig-box ${sigConf.style}`;
+        $("sigIcon").textContent  = sigConf.icon;
+        $("sigName").textContent  = sigConf.name;
+        $("sigName").style.color  = sigConf.nameColor;
+        $("sigDesc").textContent  = sigConf.desc;
+        $("sigDesc").style.color  = sigConf.descColor;
+        $("strFill").style.width  = `${strength}%`;
+        $("strLabel").textContent = strength >= 70 ? "강함" : strength >= 40 ? "보통" : "약함";
+
+        // ── 신호 변경 시 알림 발생 ──
+        const sigKey = `${ticker}:${combined}`;
+        if (prevSignal !== null && prevSignal !== sigKey && combined !== "hold") {
+          triggerSignalAlert(ticker, currentName, combined, sigConf.desc);
+        }
+        if (prevSignal === null && combined !== "hold") {
+          // 최초 로드 시 매수/매도면 알림
+          triggerSignalAlert(ticker, currentName, combined, sigConf.desc);
+        }
+        prevSignal = sigKey;
+      }
+    }
+
+    return data;
+  } catch(e) {
+    showErr(`차트 로드 실패: ${e.message}`);
+    return null;
+  }
+}
+
+/* ════════════════════════════════════════════════
+   3. 포트폴리오 수익률 차트 + 히스토리 저장
+════════════════════════════════════════════════ */
+const ANNUAL_TARGET = 0.20;
+const WEEKLY_RATE   = Math.pow(1 + ANNUAL_TARGET, 1/52) - 1;
+
+async function loadPortfolio() {
+  try {
+    const res  = await fetch(`${API}/api/portfolio`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    const totalPct = data.total_pct;
+    const now       = new Date();
+    const yearStart = new Date(now.getFullYear(), 0, 1);
+    const weeks     = Math.floor((now - yearStart) / (7 * 24 * 3600 * 1000));
+    const months    = now.getMonth() + 1;
+    const curTarget = (Math.pow(1 + WEEKLY_RATE, weeks) - 1) * 100;
+    const gap       = totalPct - curTarget;
+
+    $("actualVal").textContent   = `${totalPct >= 0 ? "+" : ""}${totalPct.toFixed(1)}%`;
+    $("targetVal").textContent   = `${curTarget >= 0 ? "+" : ""}${curTarget.toFixed(1)}%`;
+    $("targetMonthText").textContent = `${months}개월 기준 목표`;
+    $("evalAmtText").textContent = `₩${fmt(data.total_eval)} 현재가치`;
+
+    const badge = $("statusBadge");
+    if (gap >= 0) {
+      badge.className = "status-badge badge-ahead";
+      $("statusText").textContent = "목표 초과 달성 중 🎯";
+      $("gapText").innerHTML = `목표 대비 <strong style="color:#059669">+${gap.toFixed(1)}%p</strong> 앞섬`;
+    } else {
+      badge.className = "status-badge badge-behind";
+      $("statusText").textContent = "목표 미달 구간 ⚠️";
+      $("gapText").innerHTML = `목표 대비 <strong style="color:#be123c">${gap.toFixed(1)}%p</strong> 부족`;
+    }
+
+    // ── 히스토리 저장 ──
+    savePortfolioHistory(totalPct, curTarget);
+
+    // ── 차트 ──
+    const labels = [], targetLine = [], actualLine = [];
+    for (let w = 0; w <= weeks; w++) {
+      const m = Math.floor(w * 12 / 52) + 1;
+      labels.push(`${m}/${Math.floor(w % (52/12)) + 1}주`);
+      targetLine.push(parseFloat(((Math.pow(1 + WEEKLY_RATE, w) - 1) * 100).toFixed(2)));
+      actualLine.push(parseFloat((totalPct * w / weeks).toFixed(2)));
+    }
+    drawPortChart(labels, actualLine, targetLine);
+
+  } catch(e) {
+    showErr(`포트폴리오 로드 실패: ${e.message}`);
+    drawPortChartSample();
+  }
+}
+
+/* ── 포트폴리오 히스토리 localStorage 저장 ── */
+function savePortfolioHistory(actual, target) {
+  try {
+    const key  = "portHistory";
+    const today = new Date().toISOString().slice(0, 10);
+    const hist = JSON.parse(localStorage.getItem(key) || "[]");
+    // 오늘자 갱신 또는 추가
+    const idx = hist.findIndex(h => h.date === today);
+    const entry = { date: today, actual: parseFloat(actual.toFixed(2)), target: parseFloat(target.toFixed(2)) };
+    if (idx >= 0) hist[idx] = entry; else hist.push(entry);
+    // 최대 90일 보관
+    if (hist.length > 90) hist.splice(0, hist.length - 90);
+    localStorage.setItem(key, JSON.stringify(hist));
+  } catch(e) { /* localStorage 미지원 환경 무시 */ }
+}
+
+/* ════════════════════════════════════════════════
+   포트폴리오 히스토리 모달
+════════════════════════════════════════════════ */
+function openHistoryPanel() {
+  $("histOverlay").classList.add("open");
+  $("histPanel").classList.add("open");
+  renderHistoryPanel();
+}
+
+function closeHistoryPanel() {
+  $("histOverlay").classList.remove("open");
+  $("histPanel").classList.remove("open");
+}
+
+function renderHistoryPanel() {
+  try {
+    const hist = JSON.parse(localStorage.getItem("portHistory") || "[]");
+    const sorted = [...hist].sort((a, b) => b.date.localeCompare(a.date));
+
+    if (!sorted.length) {
+      $("histTableBody").innerHTML = '<tr><td colspan="4" class="hist-empty">히스토리가 없습니다.<br>대시보드를 사용할수록 자동 기록됩니다.</td></tr>';
+      $("histSummary").innerHTML = "";
+      if (histChartInst) { histChartInst.destroy(); histChartInst = null; }
+      return;
+    }
+
+    // ── 요약 카드 ──
+    const best = Math.max(...hist.map(h => h.actual));
+    const latest = sorted[0].actual;
+    const change = sorted.length > 1 ? (sorted[0].actual - sorted[1].actual).toFixed(2) : 0;
+    $("histSummary").innerHTML = `
+      <div class="hs-card"><div class="hs-label">현재 수익률</div><div class="hs-val" style="color:${latest>=0?"#059669":"#dc2626"}">${latest>=0?"+":""}${latest}%</div></div>
+      <div class="hs-card"><div class="hs-label">전일 대비</div><div class="hs-val" style="color:${change>=0?"#059669":"#dc2626"}">${change>=0?"+":""}${change}%p</div></div>
+      <div class="hs-card"><div class="hs-label">최고 수익률</div><div class="hs-val" style="color:#059669">+${best}%</div></div>
+    `;
+
+    // ── 히스토리 차트 ──
+    const chartData = [...hist].sort((a, b) => a.date.localeCompare(b.date)).slice(-60);
+    const hctx = $("histChart").getContext("2d");
+    if (histChartInst) histChartInst.destroy();
+    histChartInst = new Chart(hctx, {
+      type:"line",
+      data:{
+        labels: chartData.map(h => h.date.slice(5)),
+        datasets:[
+          { label:"실제", data:chartData.map(h=>h.actual), borderColor:"#7c3aed", borderWidth:2, pointRadius:2, fill:false, tension:0.4 },
+          { label:"목표", data:chartData.map(h=>h.target), borderColor:"#3b82f6", borderWidth:1.5, borderDash:[5,3], pointRadius:0, fill:false, tension:0.4 },
+        ]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:true,labels:{font:{size:10},color:"#64748b"}},
+          tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.raw>=0?"+":""}${c.raw}%`}}},
+        scales:{
+          x:{ticks:{font:{size:9},color:"#94a3b8"},grid:{display:false}},
+          y:{ticks:{font:{size:9},color:"#94a3b8",callback:v=>v+"%"},position:"right",grid:{color:"rgba(0,0,0,.04)"}}
+        }
+      }
+    });
+
+    // ── 히스토리 테이블 ──
+    $("histTableBody").innerHTML = sorted.slice(0, 30).map(h => {
+      const diff = (h.actual - h.target).toFixed(2);
+      const cls  = h.actual >= h.target ? "ht-up" : "ht-dn";
+      return `<tr>
+        <td>${h.date}</td>
+        <td class="${h.actual>=0?"ht-up":"ht-dn"}">${h.actual>=0?"+":""}${h.actual}%</td>
+        <td style="color:#3b82f6">${h.target>=0?"+":""}${h.target}%</td>
+        <td class="${cls}">${diff>=0?"+":""}${diff}%p</td>
+      </tr>`;
+    }).join("");
+  } catch(e) {
+    $("histTableBody").innerHTML = '<tr><td colspan="4" class="hist-empty">데이터 로드 오류</td></tr>';
+  }
+}
+
+/* ════════════════════════════════════════════════
+   포트폴리오 차트 그리기
+════════════════════════════════════════════════ */
+const fillPlugin = {
+  id:"fillBetween",
+  beforeDatasetsDraw(chart) {
+    const {ctx, scales:{x,y}} = chart;
+    const A = chart.data.datasets[0].data;
+    const T = chart.data.datasets[1].data;
+    ctx.save();
+    for (let i = 0; i < A.length - 1; i++) {
+      const x0=x.getPixelForValue(i), x1=x.getPixelForValue(i+1);
+      const aY0=y.getPixelForValue(A[i]), aY1=y.getPixelForValue(A[i+1]);
+      const tY0=y.getPixelForValue(T[i]), tY1=y.getPixelForValue(T[i+1]);
+      ctx.beginPath();
+      ctx.moveTo(x0,aY0); ctx.lineTo(x1,aY1); ctx.lineTo(x1,tY1); ctx.lineTo(x0,tY0);
+      ctx.closePath();
+      ctx.fillStyle = A[i]>=T[i] && A[i+1]>=T[i+1] ? "rgba(16,185,129,0.18)"
+                    : A[i]< T[i] && A[i+1]< T[i+1] ? "rgba(244,63,94,0.14)"
+                    :                                   "rgba(245,158,11,0.1)";
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+};
+
+function drawPortChart(labels, actualLine, targetLine) {
+  if (portChartInst) portChartInst.destroy();
+  portChartInst = new Chart($("portChart").getContext("2d"), {
+    type:"line", plugins:[fillPlugin],
+    data:{
+      labels,
+      datasets:[
+        { label:"실제", data:actualLine, borderColor:"#7c3aed", borderWidth:2.5, backgroundColor:"transparent",
+          pointRadius:actualLine.map((_,i)=>i===actualLine.length-1?6:0),
+          pointBackgroundColor:"#7c3aed", pointBorderColor:"#fff", pointBorderWidth:2, tension:0.4, fill:false },
+        { label:"목표(연20%)", data:targetLine, borderColor:"#3b82f6", borderWidth:2, borderDash:[6,4],
+          pointRadius:targetLine.map((_,i)=>i===targetLine.length-1?5:0),
+          pointBackgroundColor:"#3b82f6", pointBorderColor:"#fff", pointBorderWidth:2, tension:0.4, fill:false }
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{intersect:false,mode:"index"},
+      plugins:{
+        legend:{display:false},
+        tooltip:{backgroundColor:"rgba(255,255,255,.97)",titleColor:"#475569",bodyColor:"#1e1b4b",borderColor:"#e2e8f0",borderWidth:1,padding:10,
+          callbacks:{
+            label:c=>`${c.datasetIndex===0?"실제":"목표"}: ${c.raw>=0?"+":""}${c.raw.toFixed(2)}%`,
+            afterBody:items=>{ if(items.length<2)return[]; const d=items[0].raw-items[1].raw; return[`차이: ${d>=0?"+":""}${d.toFixed(2)}%p ${d>=0?"🟢 초과":"🔴 미달"}`]; }
+          }
+        }
+      },
+      scales:{
+        x:{grid:{color:"rgba(0,0,0,.04)"},ticks:{color:"#94a3b8",font:{size:9},maxTicksLimit:9,maxRotation:0}},
+        y:{grid:{color:"rgba(0,0,0,.04)"},ticks:{color:"#94a3b8",font:{size:9},callback:v=>v.toFixed(0)+"%"},position:"right"}
+      }
+    }
+  });
+}
+
+function drawPortChartSample() {
+  const weeks = 17;
+  const labels = Array.from({length:weeks+1},(_,w)=>`${Math.floor(w*12/52)+1}/${Math.floor(w%(52/12))+1}주`);
+  const targetLine = Array.from({length:weeks+1},(_,w)=>parseFloat(((Math.pow(1+WEEKLY_RATE,w)-1)*100).toFixed(2)));
+  const actualLine = [0.0,0.8,1.2,0.5,0.9,2.1,1.8,3.2,4.1,5.8,6.2,7.0,7.8,8.5,9.1,9.4,9.8];
+  drawPortChart(labels, actualLine, targetLine);
+}
+
+/* ════════════════════════════════════════════════
+   4. 관심종목
+════════════════════════════════════════════════ */
+function renderWatchlistHtml(items) {
+  // items: [{code, name, price, change_pct}]
+  return items.map(item => {
+    const isUp = item.change_pct >= 0;
+    const sel  = item.code === currentTicker ? " sel" : "";
+    const sd   = STOCKS_DATA[item.code];
+    const sig  = sd ? sd.signal : null;
+    const badge = sd ? sd.badge : null;
+    const sigCls = sig === "buy" ? "wis-buy" : sig === "sell" ? "wis-sell" : sig === "watch" ? "wis-watch" : "wis-hold";
+    const badgeHtml = badge ? `<div class="wi-sig ${sigCls}">${badge}</div>` : "";
+    const priceStr = item.price > 0 ? `₩${fmt(item.price)}` : "--";
+    const pctStr   = item.price > 0 ? `${item.change_pct >= 0 ? "+" : ""}${item.change_pct}%` : "-.-%";
+    return `<div class="wl-item${sel}" onclick="switchTicker('${item.code}','${item.name}')">
+      <div><div class="wi-tkr">${item.name}</div><div class="wi-code">${item.code}</div>${badgeHtml}</div>
+      <div style="text-align:right">
+        <div class="wi-price">${priceStr}</div>
+        <div class="wi-pct ${isUp?"up-pill":"dn-pill"}">${pctStr}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function loadWatchlist() {
+  // ① 즉시 STOCKS_DATA로 35종목 표시 (가격은 나중에 업데이트)
+  const staticItems = Object.entries(STOCKS_DATA).map(([code, sd]) => ({
+    code, name: sd.name, price: 0, change_pct: 0
+  }));
+  $("watchlistEl").innerHTML = renderWatchlistHtml(staticItems);
+
+  // ② API로 실시간 가격 업데이트 시도
+  try {
+    const ctrl = new AbortController();
+    const tid  = setTimeout(() => ctrl.abort(), 30000); // 30초 타임아웃
+    const res  = await fetch(`${API}/api/watchlist`, { signal: ctrl.signal });
+    clearTimeout(tid);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    // API 결과가 너무 적으면 (8개 미만) STOCKS_DATA 순서로 보강
+    const apiMap = {};
+    data.watchlist.forEach(w => { apiMap[w.code] = w; });
+
+    const merged = staticItems.map(s => apiMap[s.code] || s);
+    $("watchlistEl").innerHTML = renderWatchlistHtml(merged);
+
+    const now = new Date();
+    $("wlUpdated").textContent = `${now.getHours()}:${now.getMinutes().toString().padStart(2,"0")} 갱신`;
+  } catch(e) {
+    // API 실패해도 정적 35종목은 이미 표시됨 — 에러 노출 안 함
+    console.warn("관심종목 가격 업데이트 실패:", e.message);
+    const now = new Date();
+    $("wlUpdated").textContent = `캐시 데이터`;
+  }
+}
+
+/* ════════════════════════════════════════════════
+   5. 뉴스 RSS
+════════════════════════════════════════════════ */
+async function loadNews() {
+  try {
+    const res  = await fetch(`${API}/api/news?count=6`);
+    const data = await res.json();
+    if (!data.ok || !data.news.length) return;
+
+    const items = data.news.map(n => `
+      <div class="news-item" onclick="window.open('${n.link}','_blank')">
+        <span class="news-tag tag-${n.tag}">${n.tag==="pos"?"호재":n.tag==="neg"?"악재":"중립"}</span>
+        <span class="news-source">${n.source}</span>
+        <span class="news-headline">${n.title}</span>
+        <span class="news-time">${n.pub}</span>
+      </div>`).join("");
+
+    $("newsTrack").innerHTML = items + items;
+  } catch(e) {
+    console.warn("뉴스 로드 실패:", e.message);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   6. 시장 지수
+════════════════════════════════════════════════ */
+async function loadMarket() {
+  try {
+    const res  = await fetch(`${API}/api/market`);
+    const data = await res.json();
+    if (!data.ok) return;
+
+    function fmtIndex(idx) {
+      const sign = idx.change_pct >= 0 ? "▲" : "▼";
+      const color = idx.change_pct >= 0 ? "#059669" : "#dc2626";
+      return `<span style="font-weight:800;color:#1e1b4b;">${fmt(idx.value)}</span>
+              <span style="font-size:10px;color:${color};margin-left:4px;">${sign} ${Math.abs(idx.change_pct)}%</span>`;
+    }
+    $("kospiVal").innerHTML  = fmtIndex(data.kospi);
+    $("kosdaqVal").innerHTML = fmtIndex(data.kosdaq);
+    $("sKospi").innerHTML    = `${data.kospi.value} <span style="font-size:10px;color:${data.kospi.change_pct>=0?"#059669":"#dc2626"}">${data.kospi.change_pct>=0?"+":""}${data.kospi.change_pct}%</span>`;
+  } catch(e) {
+    console.warn("시장지수 로드 실패:", e.message);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   7. 종목 전환
+════════════════════════════════════════════════ */
+async function switchTicker(ticker, name) {
+  currentTicker = ticker;
+  currentName   = name;
+  prevSignal    = null;  // 종목 바뀌면 신호 초기화
+
+  // heroMarket KOSPI/KOSDAQ 구분 (코스닥 종목 코드 범위 근사)
+  const kosdaq = ["277810","196170","087010","214450","214150","030530","095340","058470","145020","263750","278470","259960","373220","034020","267260"];
+  $("heroName").textContent   = name;
+  $("heroMarket").textContent = `${kosdaq.includes(ticker)?"KOSDAQ":"KOSPI"} · ${ticker}`;
+  $("heroSub").textContent    = STOCKS_DATA[ticker] ? `${STOCKS_DATA[ticker].sector}` : ticker;
+
+  await Promise.all([
+    loadPrice(ticker),
+    loadChart(ticker, currentPeriod),
+  ]);
+
+  // 종목 상세 정보 렌더링
+  renderStockDetail(ticker);
+
+  // 종목 뉴스 로드 (RSS + 폴백)
+  loadStockNews(ticker, name);
+
+  // 관심종목 선택 표시 갱신
+  document.querySelectorAll(".wl-item").forEach(el => {
+    el.classList.toggle("sel", el.onclick?.toString().includes(`'${ticker}'`));
+  });
+}
+
+/* ════════════════════════════════════════════════
+   8. 전체 새로고침
+════════════════════════════════════════════════ */
+async function refreshAll() {
+  const btn = $("refreshBtn");
+  btn.classList.add("spinning");
+  setConn("loading", "데이터 갱신 중...");
+
+  try {
+    await Promise.all([
+      loadPrice(currentTicker),
+      loadChart(currentTicker, currentPeriod),
+      loadPortfolio(),
+      loadWatchlist(),
+      loadMarket(),
+    ]);
+    // 뉴스는 종목 선택 시에만 로드 (refreshAll에서 제외)
+    setConn("live", "KIS · yfinance · RSS 연결됨");
+  } catch(e) {
+    setConn("error", "일부 데이터 오류");
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+/* ════════════════════════════════════════════════
+   8-1. 종목 상세 정보 렌더링
+════════════════════════════════════════════════ */
+function renderStockDetail(ticker) {
+  const sd = STOCKS_DATA[ticker];
+  if (!sd) return;
+
+  // ── 투자 전략 ──
+  const sigCls = {buy:"vb-act-buy",sell:"vb-act-sell",hold:"vb-act-hold",watch:"vb-act-watch"}[sd.signal] || "vb-act-hold";
+  const suppStr = sd.support.map(v => `<span class="vbl">지지 <span class="vbl-s">₩${fmt(v)}</span></span>`).join(" ");
+  const resStr  = sd.resist.map(v  => `<span class="vbl">저항 <span class="vbl-r">₩${fmt(v)}</span></span>`).join(" ");
+  $("stratContent").innerHTML = `
+    <div class="verdict-box">
+      <div class="vb-action ${sigCls}">${sd.action}</div>
+      <div class="vb-reason">${sd.verdict}</div>
+      <div class="vb-levels">${suppStr}${resStr}</div>
+    </div>`;
+
+  // ── 핵심 지표 ──
+  const indRows = sd.indicators.map(ind => {
+    const sigCls2 = ind.sig === "bull" ? "ind-sig-bull" : ind.sig === "bear" ? "ind-sig-bear" : "ind-sig-neu";
+    const barCls  = ind.sig === "bull" ? "ibf-g" : ind.sig === "bear" ? "ibf-r" : "ibf-n";
+    const barW    = Math.min(ind.sc || 50, 100);
+    return `<tr>
+      <td>${ind.n}</td>
+      <td class="${sigCls2}">${ind.v}</td>
+      <td><div class="ind-bar-w"><div class="ind-bar-f ${barCls}" style="width:${barW}%;"></div></div></td>
+    </tr>`;
+  }).join("");
+  $("indContent").innerHTML = `
+    <table class="ind-tbl">
+      <thead><tr><th>지표</th><th>값</th><th>강도</th></tr></thead>
+      <tbody>${indRows}</tbody>
+    </table>`;
+
+  // ── 실적 컨센서스 ──
+  const cnsRows = sd.consensus.map(c => {
+    const eCls = c.e && (c.e.startsWith("+") || c.e.includes("흑전") || c.e.includes("성장")) ? "cu"
+               : c.e && (c.e.startsWith("-") || c.e.includes("적자") || c.e.includes("감소")) ? "cd" : "";
+    return `<tr>
+      <td>${c.y}</td>
+      <td style="color:var(--text);font-weight:500;">${c.s || "-"}</td>
+      <td style="color:var(--text);font-weight:500;">${c.o || "-"}</td>
+      <td class="${eCls}">${c.e || "-"}</td>
+    </tr>`;
+  }).join("");
+  $("cnsContent").innerHTML = `
+    <table class="cns-tbl">
+      <thead><tr><th>연도</th><th>매출</th><th>영업이익</th><th>성장률</th></tr></thead>
+      <tbody>${cnsRows}</tbody>
+    </table>`;
+
+  // ── 종목 뉴스 (정적 데이터) ──
+  const newsHtml = sd.news.map(n => {
+    const tagCls = n.imp === "pos" ? "snt-pos" : n.imp === "neg" ? "snt-neg" : "snt-neu";
+    const tagTxt = n.imp === "pos" ? "호재" : n.imp === "neg" ? "악재" : "중립";
+    return `<div class="sn-item">
+      <div class="sn-date">${n.d}</div>
+      <div class="sn-title">${n.t}</div>
+      <span class="sn-tag ${tagCls}">${tagTxt}</span>
+    </div>`;
+  }).join("");
+  $("stockNewsContent").innerHTML = newsHtml || '<div class="no-stock-hint">뉴스 데이터 없음</div>';
+}
+
+/* ════════════════════════════════════════════════
+   8-2. 종목 뉴스 하단 바 로드 (RSS 필터)
+════════════════════════════════════════════════ */
+function buildStaticNewsHtml(ticker, name) {
+  const sd = STOCKS_DATA[ticker];
+  if (!sd || !sd.news.length) return null;
+  const items = sd.news.map(n => {
+    const tagCls = n.imp === "pos" ? "tag-pos" : n.imp === "neg" ? "tag-neg" : "tag-neu";
+    const tagTxt = n.imp === "pos" ? "호재" : n.imp === "neg" ? "악재" : "중립";
+    return `<div class="news-item">
+      <span class="news-tag ${tagCls}">${tagTxt}</span>
+      <span class="news-source">[${name}]</span>
+      <span class="news-headline">${n.t}</span>
+      <span class="news-time">${n.d}</span>
+    </div>`;
+  }).join("");
+  return items + items;
+}
+
+async function loadStockNews(ticker, name) {
+  // ① 즉시 정적 데이터 표시 (네트워크 없음)
+  const staticHtml = buildStaticNewsHtml(ticker, name);
+  if (staticHtml) {
+    $("newsTrack").innerHTML = staticHtml;
+  }
+
+  // ② 백그라운드에서 RSS 시도 — 해당 종목 이름이 2건 이상 포함될 때만 교체
+  try {
+    const res  = await fetch(`${API}/api/news?count=12&name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (!data.ok || !data.news.length) return;
+
+    // 제목에 종목 이름이 포함된 기사만 필터
+    const relevant = data.news.filter(n => n.title.includes(name));
+    if (relevant.length < 2) return; // 관련 뉴스 부족 → 정적 데이터 유지
+
+    const items = relevant.map(n => `
+      <div class="news-item" onclick="window.open('${n.link}','_blank')">
+        <span class="news-tag tag-${n.tag}">${n.tag==="pos"?"호재":n.tag==="neg"?"악재":"중립"}</span>
+        <span class="news-source">${n.source}</span>
+        <span class="news-headline">${n.title}</span>
+        <span class="news-time">${n.pub}</span>
+      </div>`).join("");
+    $("newsTrack").innerHTML = items + items;
+  } catch(e) {
+    // RSS 실패 — 이미 표시된 정적 데이터 그대로 유지
+    console.warn("RSS 뉴스 로드 실패:", e.message);
+  }
+}
+
+/* ════════════════════════════════════════════════
+   9. 뉴스 컨트롤
+════════════════════════════════════════════════ */
+function toggleNewsPause() {
+  const track = $("newsTrack");
+  const btn   = $("pauseBtn");
+  newsPaused  = !newsPaused;
+  track.style.animationPlayState = newsPaused ? "paused" : "running";
+  btn.textContent = newsPaused ? "▶" : "⏸";
+}
+
+/* ════════════════════════════════════════════════
+   10. TF 버튼
+════════════════════════════════════════════════ */
+document.querySelectorAll(".tf").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    document.querySelectorAll(".tf").forEach(b => b.classList.remove("on"));
+    btn.classList.add("on");
+    currentPeriod = btn.dataset.p;
+    prevSignal = null;  // 기간 바뀌면 신호 초기화
+    await loadChart(currentTicker, currentPeriod);
+  });
+});
+
+/* ════════════════════════════════════════════════
+   11. 초기 로드 + 자동 갱신 (1분)
+════════════════════════════════════════════════ */
+(async () => {
+  setConn("loading", "서버 연결 중...");
+  requestNotifPermission();   // 브라우저 알림 권한 요청
+  // 초기 종목 전략 정보 렌더링
+  const sd0 = STOCKS_DATA[currentTicker];
+  if (sd0) {
+    $("heroSub").textContent = sd0.sector;
+    renderStockDetail(currentTicker);
+  }
+  await refreshAll();
+  setInterval(refreshAll, 60_000);
+})();
+</script>
+</body>
+</html>
