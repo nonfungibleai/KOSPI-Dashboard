@@ -9,10 +9,10 @@ import time
 import datetime
 import feedparser
 import requests
-import yfinance as yf
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from concurrent.futures import ThreadPoolExecutor
+# yfinance는 무거운 패키지라 함수 내부에서 lazy import 사용
 
 app = Flask(__name__)
 CORS(app)
@@ -171,6 +171,7 @@ PERIOD_MAP = {
 
 @app.route("/api/chart")
 def api_chart():
+    import yfinance as yf  # lazy import
     ticker = request.args.get("ticker", "005930")
     period = request.args.get("period", "1W")
     days   = PERIOD_MAP.get(period, 15)
@@ -320,6 +321,7 @@ def api_watchlist():
 # =============================================================
 @app.route("/api/market")
 def api_market():
+    import yfinance as yf  # lazy import
     try:
         def get_index(symbol):
             df = yf.download(symbol, period="5d", progress=False, auto_adjust=True)
